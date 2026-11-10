@@ -2,7 +2,7 @@
 <!--
     Graph Connectivity Tests - HTML template
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
     Export-GctReport (src\GraphConnectivityTests.Report.ps1) copies this file and replaces ten markers, each
     exactly once: TITLE (text), and SUMMARY, STEPS, MAILBOXES, FREEBUSY, EVENTS, PROVISIONING, DNS, ACTIONS,
     TRACE (JSON, in the script blocks at the end of the body). Everything else is static: texts, colours and
@@ -336,6 +336,31 @@ footer { color:var(--cp-text-muted); font-size:12px; line-height:1.6; padding:0 
   * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   details.step:not([open]) .s-msg { display:block; -webkit-line-clamp:unset; }
 }
+
+/* Message headers: the chronology */
+.rail { list-style:none; margin:0; padding:0; position:relative; }
+.rail::before { content:""; position:absolute; left:15px; top:14px; bottom:14px; width:2px; background:var(--cp-border); }
+.rail > li { position:relative; margin:0 0 6px; }
+.rail details > summary { list-style:none; cursor:pointer; display:grid; grid-template-columns:32px 96px minmax(0,1fr) auto; gap:10px; align-items:start; padding:9px 10px 9px 0; border-radius:12px; }
+.rail details > summary::-webkit-details-marker { display:none; }
+.rail details > summary:hover { background:var(--cp-accent-soft); }
+.rail details[open] > summary { background:var(--cp-bg-elevated); }
+.r-dot { justify-self:center; margin-top:3px; width:14px; height:14px; border-radius:50%; border:3px solid var(--cp-border-strong); background:var(--cp-surface); box-shadow:0 0 0 3px var(--cp-surface); position:relative; z-index:1; }
+.rail li.good .r-dot { border-color:var(--cp-success); background:var(--cp-success); } .rail li.warn .r-dot { border-color:var(--cp-warning); background:var(--cp-warning); } .rail li.bad .r-dot { border-color:var(--cp-danger); background:var(--cp-danger); }
+.rail li.longest .r-dot { box-shadow:0 0 0 3px var(--cp-surface), 0 0 0 6px var(--cp-warning-soft); }
+.r-time { display:flex; flex-direction:column; gap:2px; font-variant-numeric:tabular-nums; } .r-time b { font-size:13.5px; } .r-wait { font-size:12px; color:var(--cp-text-muted); }
+.rail li.longest .r-wait { color:var(--cp-warning); font-weight:700; }
+.r-main { min-width:0; display:flex; flex-direction:column; gap:3px; } .r-head { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; }
+.r-server { font-family:Consolas, "Cascadia Mono", monospace; font-size:12.5px; font-weight:700; overflow-wrap:anywhere; } .r-from { font-size:12px; color:var(--cp-text-soft); overflow-wrap:anywhere; }
+.r-pills { display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; max-width:260px; } .r-pills .pill { font-size:11px; line-height:18px; }
+.r-seg { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; line-height:18px; background:var(--cp-neutral-soft); color:var(--cp-text-soft); white-space:nowrap; }
+.r-seg.entry, .r-seg.exchangeOnline { background:var(--cp-accent-soft); color:var(--cp-accent); } .r-seg.gateway { background:var(--cp-warning-soft); color:var(--cp-warning); }
+.r-seg.onPremises { background:var(--cp-blocked-soft); color:var(--cp-blocked); } .r-seg.delivery { background:var(--cp-success-soft); color:var(--cp-success); }
+.r-body { margin:0 0 8px 42px; padding:10px 14px 12px; border:1px solid var(--cp-border); border-top:0; border-radius:0 0 12px 12px; background:var(--cp-bg-elevated); }
+.finding { margin:10px 0 0; padding:9px 12px; border:1px solid var(--cp-border); border-left:4px solid var(--cp-border-strong); border-radius:10px; background:var(--cp-surface); font-size:13px; overflow-wrap:anywhere; }
+.finding.bad { border-left-color:var(--cp-danger); } .finding.warn { border-left-color:var(--cp-warning); } .finding.good { border-left-color:var(--cp-success); }
+.finding p { margin:6px 0 0; } .finding .tip { color:var(--cp-text); } .finding .verdict { color:var(--cp-text-soft); }
+@media (max-width: 700px) { .rail details > summary { grid-template-columns:32px minmax(0,1fr); } .r-time, .r-main, .r-pills { grid-column:2; } .r-pills { justify-content:flex-start; max-width:none; } .r-body { margin-left:0; } }
 </style></head><body>
 <a class="skiplink" href="#main">Skip to the report</a>
 <div class="wrap">
@@ -371,6 +396,7 @@ A passed check proves that check only, for this account, these mailboxes and thi
 <script id="data-provisioning" type="application/json">{{PROVISIONING_JSON}}</script>
 <script id="data-dns" type="application/json">{{DNS_JSON}}</script>
 <script id="data-actions" type="application/json">{{ACTIONS_JSON}}</script>
+<script id="data-route" type="application/json">{{ROUTE_JSON}}</script>
 <script id="data-trace" type="application/json">{{TRACE_JSON}}</script>
 <script>
 (() => {
@@ -384,7 +410,7 @@ A passed check proves that check only, for this account, these mailboxes and thi
   const rows = id => arr(parse(id)).filter(x => x != null && typeof x === "object");
   const S = parse("data-summary") || {};
   const D = { steps: rows("data-steps"), mailboxes: rows("data-mailboxes"), freebusy: rows("data-freebusy"), events: rows("data-events"), provisioning: rows("data-provisioning"),
-    dns: rows("data-dns"), actions: rows("data-actions"), trace: rows("data-trace") };
+    dns: rows("data-dns"), actions: rows("data-actions"), trace: rows("data-trace"), route: rows("data-route") };
   const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null && text !== "") e.textContent = String(text); return e; };
   const svgNS = "http://www.w3.org/2000/svg";
   const empty = v => v == null || v === "" || (Array.isArray(v) && !v.length);
@@ -411,7 +437,8 @@ A passed check proves that check only, for this account, these mailboxes and thi
 
   const STAGES = { Discovery: "Where are the mailboxes (Entra ID, Autodiscover)", OnPremises: "On-premises endpoint (certificate, OAuth)", Dns: "DNS records of the domain", SignIn: "Sign-in",
     Source: "Source mailbox", Target: "Target mailboxes (directory, MailTips)", FreeBusy: "Free/busy", Hybrid: "Hybrid configuration (administrator)", Sync: "Synchronization (delta)",
-    Availability: "Availability and MailTips of the mailbox", AutoReply: "Automatic replies", Provisioning: "Mailbox provisioning", DomainRecords: "Records expected by Microsoft 365" };
+    Availability: "Availability and MailTips of the mailbox", AutoReply: "Automatic replies", Provisioning: "Mailbox provisioning", DomainRecords: "Records expected by Microsoft 365",
+    HeaderRead: "Message headers", HeaderDns: "Is it still the case? (DNS of today)", HeaderRoute: "Route of the message (chronology)" };
   const stageTitles = Object.assign({}, STAGES, (S.StageTitles && typeof S.StageTitles === "object") ? S.StageTitles : {});
   const stageOrder = [...new Set(Object.keys((S.StageTitles && typeof S.StageTitles === "object") ? S.StageTitles : {}).concat(D.steps.map(s => s.Stage)))].filter(k => D.steps.some(s => s.Stage === k));
   const LOCATION = { ExchangeOnline: ["Exchange Online", ""], OnPremises: ["Exchange on-premises", "onprem"], External: ["Outside Microsoft 365", "external"], Unknown: ["Not found by Autodiscover", "unknown"] };
@@ -440,8 +467,9 @@ A passed check proves that check only, for this account, these mailboxes and thi
   labelTheme();
 
   // ---- Header ---------------------------------------------------------------------------
-  const testNames = { FreeBusy: "Free/busy test report", MailboxServices: "Mailbox services test report", Provisioning: "Mailbox provisioning report", DomainDns: "Domain DNS report", All: "Connectivity test report" };
-  $("origin").textContent = ["Graph Connectivity Tests", S.Scenario || S.TestType, S.Cloud ? `${S.Cloud} cloud` : "", S.Context ? `${S.Context} context` : ""].filter(Boolean).join(" / ");
+  const testNames = { FreeBusy: "Free/busy test report", MailboxServices: "Mailbox services test report", Provisioning: "Mailbox provisioning report", DomainDns: "Domain DNS report", MessageHeaders: "Message header analysis", All: "Connectivity test report" };
+  const headersTest = S.TestType === "MessageHeaders";
+  $("origin").textContent = ["Graph Connectivity Tests", S.Scenario || S.TestType, !headersTest && S.Cloud ? `${S.Cloud} cloud` : "", !headersTest && S.Context ? `${S.Context} context` : ""].filter(Boolean).join(" / ");
   $("title").textContent = testNames[S.TestType] || "Connectivity test report";
   const who = S.SourceMailbox || "the source mailbox";
   const subtitle = {
@@ -449,6 +477,7 @@ A passed check proves that check only, for this account, these mailboxes and thi
     MailboxServices: `Synchronization, availability, MailTips and automatic replies of ${who} through Microsoft Graph.`,
     Provisioning: `Does each address have a mailbox, where, of which type and with which Exchange license?`,
     DomainDns: `The DNS records of ${S.Domain || "the domain"} for Exchange Online, and the records Microsoft 365 expects for it.`,
+    MessageHeaders: `How the message ${(S.HeaderSummary && S.HeaderSummary.Subject) ? "\u201c" + S.HeaderSummary.Subject + "\u201d " : ""}travelled and what Microsoft 365 decided, read from its headers on this computer - nothing signed in.`,
     All: `Every read-only test for ${who}: free/busy, mailbox services, provisioning and DNS.`
   }[S.TestType] || `Test for ${who}.`;
   $("subtitle").textContent = subtitle + " No token, secret or password is written to this report.";
@@ -463,7 +492,12 @@ A passed check proves that check only, for this account, these mailboxes and thi
   $("metric-checks-note").textContent = `${number(counts.Warning)} warning · ${number(counts.Blocked)} blocked · ${number(counts.Failed)} failed · ${number(counts.Skipped)} skipped`;
   (function thirdTile() {
     const label = $("metric-third-label"), value = $("metric-third"), note = $("metric-third-note");
-    if (D.freebusy.length) {
+    if (D.route.length) {
+      const H = S.HeaderSummary || {};
+      label.textContent = "Delivery time";
+      value.textContent = H.Transit || "-";
+      note.textContent = H.LongestWait ? `longest wait ${H.LongestWait}` : `${D.route.length - 2} hop(s)`;
+    } else if (D.freebusy.length) {
       const ok = D.freebusy.filter(f => f.Status !== "Failed");
       value.textContent = `${ok.length} / ${D.freebusy.length}`;
       const bad = D.freebusy.filter(f => f.Status === "Failed").map(f => f.ResponseCode).filter(Boolean);
@@ -1096,6 +1130,54 @@ A passed check proves that check only, for this account, these mailboxes and thi
       cols: [{ h: "Address", v: r => r.Mail || r.UserPrincipalName }, { h: "Display name", v: r => r.DisplayName }, { h: "Mailbox in Exchange Online", v: r => r.MailboxInExchangeOnline, kind: "bool", bad: true, unknown: "Unknown" },
         { h: "Mailbox type", v: r => r.MailboxType }, { h: "User type", v: r => r.UserType }, { h: "Account enabled", v: r => r.AccountEnabled, kind: "bool" }, { h: "Synced from AD", v: r => r.SyncedFromAD, kind: "bool", good: false },
         { h: "Licenses", v: r => r.Licenses, none: "None" }, { h: "Exchange plan enabled", v: r => r.ExchangePlanEnabled, kind: "bool", bad: true }, { h: "Autodiscover", v: r => r.Autodiscover }, { h: "Mailbox probe", v: r => r.MailboxProbe, kind: "mono" }] });
+  })();
+
+
+  // Message headers: the chronology -----------------------------------------------------------
+  (function route() {
+    if (!D.route.length) return;
+    const H = (S.HeaderSummary && typeof S.HeaderSummary === "object") ? S.HeaderSummary : {};
+    const bad = D.route.filter(r => r.Status === "Failed").length, warn = D.route.filter(r => r.Status === "Warning").length;
+    const p = addPanel("route", "Route", panelBadge(D.route.length, bad ? "bad" : (warn ? "warn" : "")), "Route of the message",
+      "From the sender to the mailbox, times in UTC. The wait under each time is how long the previous server held the message. Open a step for its findings: authentication and hybrid attribution where the message enters Microsoft 365, the spam verdict and the folder on the mailbox.");
+    const s = p.section;
+    const facts = [["Subject", H.Subject], ["From", H.From], ["To", H.To], ["Date", H.Date], ["Delivered in", H.Transit], ["Longest wait", H.LongestWait], ["SPF / DKIM / DMARC", [H.Spf, H.Dkim, H.Dmarc].map(x => x || "-").join(" / ")], ["Composite authentication", H.Compauth], ["SCL / verdict", [H.Scl, H.Sfv].filter(x => x != null && x !== "").join(" / ")], ["Message-ID", H.MessageId], ["Network Message ID", H.NetworkMessageId], ["Headers read from", H.Source]];
+    s.appendChild(kv(facts));
+    if (H.DnsCrossCheck) s.appendChild(make("p", "notice " + (H.Fixed ? "good" : "warn"), H.Fixed ? `DNS of today: ${H.Fixed} finding(s) fixed since the message was received - marked on their step.` : "DNS of today: nothing fixed since the message was received - each verdict is on its finding."));
+    const ol = make("ol", "rail");
+    D.route.forEach(r => {
+      const li = make("li", (ST[r.Status] || "") + (r.LongestWait ? " longest" : "")), d = make("details"), sum = make("summary");
+      const findings = arr(r.Findings);
+      if (r.Status === "Failed" || r.Status === "Warning") d.open = true;
+      const time = make("span", "r-time"); time.append(make("b", null, String(r.TimeUtc || "-").replace(/^\S+ /, "").replace(/ UTC$/, "")), make("span", "r-wait", r.Wait || ""));
+      const main = make("span", "r-main"), head = make("span", "r-head");
+      head.append(make("span", "r-seg " + (r.Segment || ""), r.SegmentName), make("span", "r-server", r.Server));
+      main.append(head, make("span", "r-from", r.From));
+      const pills = make("span", "r-pills");
+      if (r.LongestWait) pills.appendChild(make("span", "pill warn", "longest wait"));
+      if (r.EntersMicrosoft365) pills.appendChild(make("span", "pill accent", "enters Microsoft 365"));
+      ["Failed", "Warning"].forEach(st => { const n = findings.filter(f => f.Status === st).length; if (n) pills.appendChild(pill(st, `${n} ${st === "Failed" ? "failed" : "warning"}`)); });
+      const fixed = findings.filter(f => f.Verdict === "fixed").length; if (fixed) pills.appendChild(make("span", "pill good", `${fixed} fixed since`));
+      sum.append(make("span", "r-dot"), time, main, pills); d.appendChild(sum);
+      const body = make("div", "r-body");
+      body.appendChild(kv([["Time", r.TimeUtc], ["Sending IP", r.Ip], ["TLS", r.Tls]]));
+      findings.forEach(f => {
+        const box = make("div", "finding " + ({ Passed: "good", Warning: "warn", Failed: "bad" }[f.Status] || ""));
+        const t = make("div"); t.append(pill(f.Status === "Info" ? "Skipped" : f.Status, f.Status), document.createTextNode(" "), make("strong", null, f.Title)); box.appendChild(t);
+        box.appendChild(make("p", null, f.Text));
+        if (f.Tip) { const tp = make("p", "tip"); tp.append(make("strong", null, "What to do: "), document.createTextNode(f.Tip)); box.appendChild(tp); }
+        if (f.VerdictText) { const v = make("p", "verdict"); v.append(make("strong", null, "DNS today: "), document.createTextNode(f.VerdictText)); box.appendChild(v); }
+        body.appendChild(box);
+      });
+      if (!findings.length) body.appendChild(make("p", "muted", "Nothing to note on this step."));
+      d.appendChild(body); li.appendChild(d); ol.appendChild(li);
+    });
+    s.appendChild(ol);
+    const cmds = arr(H.Commands);
+    if (cmds.length) {
+      s.appendChild(make("h3", null, "Follow the message"));
+      cmds.forEach(c => { s.appendChild(make("p", null, c.Title)); s.appendChild(messagePre(c.Text, true)); s.appendChild(make("p", "caption", c.Note)); });
+    }
   })();
 
   // DNS records -----------------------------------------------------------------------------

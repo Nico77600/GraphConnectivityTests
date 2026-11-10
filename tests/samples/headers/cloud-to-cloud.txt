@@ -1,0 +1,67 @@
+Received: from AM9PR04MB8000.eurprd04.prod.outlook.com (2603:10a6:20b:3e1::12)
+ by DB9PR04MB8100.eurprd04.prod.outlook.com with HTTPS; Tue, 10 Nov 2026
+ 09:14:07 +0000
+Received: from AS9PR06CA0001.eurprd06.prod.outlook.com (2603:10a6:20b:462::20)
+ by AM9PR04MB8000.eurprd04.prod.outlook.com (2603:10a6:20b:3e1::12) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8200.12; Tue, 10 Nov
+ 2026 09:14:06 +0000
+Received: from AM4PEPF00027A60.eurprd04.prod.outlook.com
+ (2603:10a6:20b:462:cafe::5a) by AS9PR06CA0001.outlook.office365.com
+ (2603:10a6:20b:462::20) with Microsoft SMTP Server (version=TLS1_3,
+ cipher=TLS_AES_256_GCM_SHA384) id 15.20.8200.12 via Frontend Transport; Tue,
+ 10 Nov 2026 09:14:06 +0000
+Authentication-Results: spf=pass (sender IP is 198.51.100.25)
+ smtp.mailfrom=fabrikam.com; dkim=pass (signature was verified)
+ header.d=fabrikam.com;dmarc=pass action=none
+ header.from=fabrikam.com;compauth=pass reason=100
+Received-SPF: Pass (protection.outlook.com: domain of fabrikam.com designates
+ 198.51.100.25 as permitted sender) receiver=protection.outlook.com;
+ client-ip=198.51.100.25; helo=EUR05-AM6-obe.outbound.protection.outlook.com;
+ pr=C
+Received: from EUR05-AM6-obe.outbound.protection.outlook.com (198.51.100.25) by
+ AM4PEPF00027A60.mail.protection.outlook.com (10.167.16.74) with Microsoft SMTP
+ Server (version=TLS1_3, cipher=TLS_AES_256_GCM_SHA384) id 15.20.8200.12 via
+ Frontend Transport; Tue, 10 Nov 2026 09:14:05 +0000
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=c2FtcGxlIHNpZ25hdHVyZSwgbm90IGEgcmVhbCBvbmU=
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com;
+ s=arcselector10001; h=From:Date:Subject:Message-ID:Content-Type:MIME-Version;
+ bh=c2FtcGxl; b=c2FtcGxlIHNpZ25hdHVyZQ==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=pass
+ smtp.mailfrom=fabrikam.com; dmarc=pass action=none header.from=fabrikam.com;
+ dkim=pass header.d=fabrikam.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=fabrikam.com;
+ s=selector1; h=From:Date:Subject:Message-ID:Content-Type:MIME-Version;
+ bh=c2FtcGxl; b=c2FtcGxlIHNpZ25hdHVyZQ==
+Received: from PA4PR08MB7000.eurprd08.prod.outlook.com (2603:10a6:102:2a1::9)
+ by DU0PR08MB7100.eurprd08.prod.outlook.com (2603:10a6:10:3d2::14) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8200.12; Tue, 10 Nov
+ 2026 09:14:04 +0000
+Received: from PA4PR08MB7000.eurprd08.prod.outlook.com
+ ([fe80::1c2d:3e4f:5a6b:7c8d]) by PA4PR08MB7000.eurprd08.prod.outlook.com
+ ([fe80::1c2d:3e4f:5a6b:7c8d%4]) with mapi id 15.20.8200.12; Tue, 10 Nov 2026
+ 09:14:03 +0000
+From: Dave Martin <dave@fabrikam.com>
+To: Alice Durand <alice@contoso.com>
+Subject: =?utf-8?Q?Planning_de_la_r=C3=A9union?=
+Thread-Topic: Planning de la reunion
+Date: Tue, 10 Nov 2026 09:14:01 +0000
+Message-ID: <PA4PR08MB7000A1B2C3D4E5F6A7B8@PA4PR08MB7000.eurprd08.prod.outlook.com>
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+X-MS-Exchange-Organization-Network-Message-Id: 3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b
+X-MS-Exchange-Organization-AuthAs: Anonymous
+X-MS-Exchange-Organization-MessageDirectionality: Incoming
+X-MS-Exchange-Organization-SCL: 1
+X-Forefront-Antispam-Report-Untrusted: CIP:255.255.255.255;CTRY:;LANG:fr;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:PA4PR08MB7000.eurprd08.prod.outlook.com;PTR:;CAT:NONE;SFS:(13230040);DIR:OUT;
+X-Microsoft-Antispam-Untrusted: BCL:0;ARA:13230040;
+X-Forefront-Antispam-Report: CIP:198.51.100.25;CTRY:IE;LANG:fr;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:EUR05-AM6-obe.outbound.protection.outlook.com;PTR:mail-am6eur05on2025.outbound.protection.outlook.com;CAT:NONE;SFS:(13230040)(82310400026);DIR:INB;
+X-Microsoft-Antispam: BCL:0;ARA:13230040|82310400026;
+X-Microsoft-Antispam-Mailbox-Delivery: ucf:0;jmr:0;auth:0;dest:I;ENG:(910001)(944506478)(944626604);
+X-MS-Exchange-CrossTenant-Id: 7d0c3e8a-5f1b-4a2c-9e6d-1b2c3d4e5f60
+X-MS-Exchange-CrossTenant-AuthAs: Anonymous
+X-MS-Exchange-CrossTenant-AuthSource: AM4PEPF00027A60.eurprd04.prod.outlook.com
+X-MS-Exchange-CrossTenant-FromEntityHeader: Internet
+X-MS-Exchange-CrossTenant-OriginalArrivalTime: 10 Nov 2026 09:14:05.8812 (UTC)

@@ -3,7 +3,7 @@
 <#
     Graph Connectivity Tests - automated tests (Pester 6.1 or later).
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 
     Run:  .\Run-Tests.ps1      (or Invoke-Pester -Path .\tests -Output Detailed)
 
@@ -98,7 +98,7 @@ Describe 'Configuration' {
         $text | Should -Match "Section 'Logging' must be @\{ \.\.\. \}"
         $text | Should -Match 'Target\.SourceMailbox must be an SMTP address'
         $text | Should -Match 'Target\.Cloud must be one of: Global, USGov, USGovDoD, China'
-        $text | Should -Match 'Test\.DefaultType must be one of: FreeBusy, MailboxServices, Provisioning, DomainDns, All'
+        $text | Should -Match 'Test\.DefaultType must be one of: FreeBusy, MailboxServices, Provisioning, DomainDns, MessageHeaders, All'
         $text | Should -Match 'FreeBusyDays must be a number from 1 to 62'
         $text | Should -Match "Test\.SignIn must be 'Auto', 'Window' or 'DeviceCode'"
         $text | Should -Match "Identity\.Context must be 'User' or 'Application'"
@@ -164,9 +164,10 @@ Describe 'Catalog and stages' {
 
     It 'exposes the tests with their stages, sign-in and writing flags' {
         $catalog = @(Get-GctTestCatalog)
-        $catalog.Name | Should -Be @('FreeBusy', 'MailboxServices', 'Provisioning', 'DomainDns', 'All')
+        $catalog.Name | Should -Be @('FreeBusy', 'MailboxServices', 'Provisioning', 'DomainDns', 'MessageHeaders', 'All')
         @($catalog | Where-Object Writes).Name | Should -Be @('MailboxServices', 'All')
-        @($catalog | Where-Object { -not $_.SignIn }).Count | Should -Be 0
+        @($catalog | Where-Object { -not $_.SignIn }).Name | Should -Be @('MessageHeaders')
+        ($catalog | Where-Object Name -eq 'MessageHeaders').Stages | Should -Be @('HeaderRead', 'HeaderDns', 'HeaderRoute')
         ($catalog | Where-Object Name -eq 'DomainDns').Stages | Should -Be @('Dns', 'SignIn', 'DomainRecords')
         ($catalog | Where-Object Name -eq 'MailboxServices').Stages | Should -Be @('SignIn', 'Source', 'Sync', 'Availability', 'AutoReply')
     }
@@ -869,6 +870,389 @@ Describe 'All' {
     }
 }
 
+Describe 'MessageHeaders' {
+    <#
+        The header analysis on the anonymised sample headers (tests\samples\headers, the same as the web page of Graph
+        Connectivity Tests), the SPF evaluator and the DNS of today against the simulated DNS, a full run.
+    #>
+    BeforeAll {
+        Import-Module (Join-Path $script:Root 'GraphConnectivityTests.psd1') -Force
+        $script:Samples = Join-Path $PSScriptRoot 'samples\headers'
+        function Get-Analysis([string]$Name) { & (Get-Module GraphConnectivityTests) { param($t) Get-GctHeaderAnalysis -Text $t } ([IO.File]::ReadAllText((Join-Path $script:Samples "$Name.txt"))) }
+        function Get-Finding($Analysis, [string]$Id) { $Analysis.Findings | Where-Object { $_.Id -eq $Id } | Select-Object -First 1 }
+        function Invoke-Gct([scriptblock]$Script, [object[]]$Arguments = @()) { & (Get-Module GraphConnectivityTests) $Script @Arguments }
+        function Test-Spf([string]$Ip, [string]$Domain = 'contoso.com') { Invoke-Gct { param($i, $d) Test-GctSpf -Ip $i -Domain $d -MailFrom "bob@$d" } @($Ip, $Domain) }
+    }
+
+    Context 'Reading the header' {
+        It 'joins folded lines, stops at the end of the header block, keeps a line whose indentation was lost' {
+            $f = Invoke-Gct { ConvertFrom-GctHeaderBlock -Text "`r`n`r`nSubject: one`r`n two`r`nX-A: 1`r`nlost indentation`r`n`r`nbody: not a header`r`n" }
+            @($f | ForEach-Object { "$($_.Name)=$($_.Value)" }) | Should -Be @('Subject=one two', 'X-A=1 lost indentation')
+        }
+
+        It 'decodes the encoded words, B and Q, adjacent words joined' {
+            Invoke-Gct { ConvertFrom-GctEncodedWord '=?utf-8?Q?r=C3=A9union_d=C3=A9but?=' } | Should -Be 'réunion début'
+            Invoke-Gct { ConvertFrom-GctEncodedWord '=?UTF-8?B?Tm92ZW1iZXIg?= =?UTF-8?B?bmV3cw==?=' } | Should -Be 'November news'
+            Invoke-Gct { ConvertFrom-GctEncodedWord '=?iso-8859-1?Q?caf=E9?= ok' } | Should -Be 'café ok'
+            Invoke-Gct { ConvertFrom-GctEncodedWord 'plain text' } | Should -Be 'plain text'
+        }
+
+        It 'reads the dates of RFC 5322 with zones, fractions and comments' {
+            $ms = { param([int]$y, [int]$mo, [int]$d, [int]$h, [int]$mi, [int]$s, [int]$f = 0) [DateTimeOffset]::new($y, $mo, $d, $h, $mi, $s, $f, [TimeSpan]::Zero).ToUnixTimeMilliseconds() }
+            Invoke-Gct { ConvertFrom-GctMailDate 'Tue, 10 Nov 2026 11:00:02 +0100' } | Should -Be (& $ms 2026 11 10 10 0 2)
+            Invoke-Gct { ConvertFrom-GctMailDate '10 Nov 2026 08:05:42.123 +0000 (UTC)' } | Should -Be (& $ms 2026 11 10 8 5 42 123)
+            Invoke-Gct { ConvertFrom-GctMailDate 'Tue, 10 Nov 2026 10:31:37 GMT' } | Should -Be (& $ms 2026 11 10 10 31 37)
+            Invoke-Gct { ConvertFrom-GctMailDate 'Mon, 9 Nov 26 23:00:00 PST' } | Should -Be (& $ms 2026 11 10 7 0 0)
+            Invoke-Gct { ConvertFrom-GctMailDate 'garbage' } | Should -BeNullOrEmpty
+        }
+
+        It 'reads a Received field: clauses, comments that contain keywords, IP, TLS, Exchange build' {
+            $r = Invoke-Gct { ConvertFrom-GctReceived 'from mail.fabrikam.com (mail.fabrikam.com [198.51.100.60]) by mx0a-001234.pphosted.com (PPS) with ESMTPS id 4abc (version=TLSv1.2 cipher=ECDHE-RSA-AES256-GCM-SHA384 bits=256 verify=NOT); Tue, 10 Nov 2026 10:31:05 +0000' }
+            $r.FromHost | Should -Be 'mail.fabrikam.com'
+            $r.Rdns | Should -Be 'mail.fabrikam.com'
+            $r.Ip | Should -Be '198.51.100.60'
+            $r.ByHost | Should -Be 'mx0a-001234.pphosted.com'
+            $r.With | Should -Be 'ESMTPS'
+            $r.Id | Should -Be '4abc'
+            $r.Tls | Should -Be 'TLSv1.2'
+            $ex = Invoke-Gct { ConvertFrom-GctReceived 'from EXMBX1.corp.contoso.com (10.0.0.11) by EXMBX2.corp.contoso.com (10.0.0.12) with Microsoft SMTP Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.2.1544.4; Tue, 10 Nov 2026 11:00:02 +0100' }
+            $ex.Ip | Should -Be '10.0.0.11'
+            $ex.ExchangeId | Should -Be '15.2.1544.4'
+            $ex.Tls | Should -Be 'TLS1.2'
+            $ex.With | Should -Be 'Microsoft SMTP Server'
+        }
+
+        It 'reads Authentication-Results of Microsoft 365 and of another server, and the organisational domain' {
+            $ms = Invoke-Gct { ConvertFrom-GctAuthResults 'spf=pass (sender IP is 198.51.100.25) smtp.mailfrom=fabrikam.com; dkim=pass (signature was verified) header.d=fabrikam.com;dmarc=pass action=none header.from=fabrikam.com;compauth=pass reason=100' }
+            $ms.Authserv | Should -BeNullOrEmpty
+            @($ms.Results | ForEach-Object { "$($_.Method)=$($_.Result)" }) | Should -Be @('spf=pass', 'dkim=pass', 'dmarc=pass', 'compauth=pass')
+            $ms.Results[3].Props['reason'] | Should -Be '100'
+            $g = Invoke-Gct { ConvertFrom-GctAuthResults 'mx.google.com; dkim=pass header.i=@fabrikam.com header.s=s1; spf=pass (google.com: domain of x@fabrikam.com designates 192.0.2.1 as permitted sender) smtp.mailfrom=x@fabrikam.com' }
+            $g.Authserv | Should -Be 'mx.google.com'
+            $g.Results[0].Props['header.s'] | Should -Be 's1'
+            $codes = Invoke-Gct { Get-GctHeaderCodes }
+            Invoke-Gct { param($c) Get-GctOrgDomain 'mail.contoso.co.uk' $c } @(, $codes) | Should -Be 'contoso.co.uk'
+            Invoke-Gct { param($c) Get-GctOrgDomain 'news.fabrikam.com' $c } @(, $codes) | Should -Be 'fabrikam.com'
+        }
+    }
+
+    Context 'The samples (same results as the web page)' {
+        It 'between two Microsoft 365 tenants: sender tenant, entry, Exchange Online, everything passes' {
+            $a = Get-Analysis 'cloud-to-cloud'
+            $a.Summary.Subject | Should -Be 'Planning de la réunion'
+            @($a.Hops | ForEach-Object { $_.Segment }) | Should -Be @('senderTenant', 'senderTenant', 'entry', 'exchangeOnline', 'exchangeOnline', 'exchangeOnline')
+            $a.Route.TransitMs | Should -Be 4000
+            $a.Route.EndToEndMs | Should -Be 6000
+            foreach ($id in 'spf', 'dkim', 'dmarc', 'compauth', 'sfv', 'delivery') { (Get-Finding $a $id).Status | Should -Be 'Passed' -Because $id }
+            (Get-Finding $a 'untrusted').Node | Should -Be 1
+            $a.Auth.Arc[0].D | Should -Be 'microsoft.com'
+            $a.Commands[0].Text | Should -Match "Get-MessageTraceV2 -MessageId '<PA4PR08MB7000A1B2C3D4E5F6A7B8@"
+            $a.Commands[0].Text | Should -Match "-StartDate '2026-11-09' -EndDate '2026-11-11'"
+        }
+
+        It 'hybrid: the sender first, Exchange on-premises, the wait on-premises, attribution recognised' {
+            $a = Get-Analysis 'hybrid-on-premises'
+            @($a.Hops | ForEach-Object { $_.Segment }) | Should -Be @('onPremises', 'onPremises', 'entry', 'exchangeOnline')
+            $a.Hops[1].ExchangeVersion | Should -Match 'Exchange Server 2019'
+            $a.Route.Biggest.DelayMs | Should -Be 136000
+            $a.Route.Biggest.HeldBy | Should -Be 'EXMBX2.corp.contoso.com'
+            (Get-Finding $a 'route-delay').Node | Should -Be 2
+            (Get-Finding $a 'hybrid').Status | Should -Be 'Passed'
+            (Get-Finding $a 'dkim').Check.Keys.Selector | Should -Be @('selector1', 'selector2')
+            $a.Origin.Host | Should -Be 'EXMBX1.corp.contoso.com'
+            $a.Origin.Time | Should -Be ([DateTimeOffset]::new(2026, 11, 10, 10, 0, 0, [TimeSpan]::Zero).ToUnixTimeMilliseconds())
+        }
+
+        It 'hybrid: an on-premises message received as anonymous Internet mail' {
+            $a = Get-Analysis 'hybrid-not-recognised'
+            $f = Get-Finding $a 'hybrid'
+            $f.Status | Should -Be 'Warning'
+            $f.Tip | Should -Match 'TlsSenderCertificateName'
+            $f.Node | Should -Be 2
+            (Get-Finding $a 'compauth').Text | Should -Match 'Implicit failure'
+        }
+
+        It 'a gateway in front of Microsoft 365: Enhanced Filtering tip on the gateway, authentication on the entry, verdict on the mailbox' {
+            $a = Get-Analysis 'gateway-in-front'
+            $a.Hops[0].Product | Should -Be 'Proofpoint'
+            $a.Auth.SenderIp | Should -Be '192.0.2.40'
+            $g = Get-Finding $a 'gateway'
+            $g.Status | Should -Be 'Warning'
+            $g.Node | Should -Be 0
+            $g.Evidence | Should -Contain 'X-Proofpoint-GUID'
+            (Get-Finding $a 'spf').Tip | Should -Match 'gateway'
+            @(Invoke-Gct { param($x) Get-GctHeaderNodeFinding -Analysis $x -Node 2 } @(, $a) | ForEach-Object { $_.Id }) | Should -Be @('spf', 'dkim', 'dmarc', 'compauth', 'dir', 'hybrid')
+            (Get-Finding $a 'sfv').Node | Should -Be 'delivery'
+            $a.CheckRequest.MailFromDomain | Should -Be 'fabrikam.com'
+            $a.CheckRequest.Ip | Should -Be '192.0.2.40'
+            $a.CheckRequest.RecipientDomain | Should -Be 'contoso.com'
+            @($a.CheckRequest.Dkim | ForEach-Object { "$($_.Domain)/$($_.Selector)" }) | Should -Be @('fabrikam.com/s2048')
+        }
+
+        It 'DMARC fails while SPF and DKIM pass: no alignment' {
+            $a = Get-Analysis 'dmarc-not-aligned'
+            $a.Summary.Subject | Should -Be "November newsletter $([char]::ConvertFromUtf32(0x1F4E8))"
+            $a.Auth.Alignment.SpfPass | Should -BeTrue
+            $a.Auth.Alignment.SpfAligned.Relaxed | Should -BeFalse
+            $a.Auth.Alignment.RelaxedPass | Should -BeFalse
+            (Get-Finding $a 'dmarc').Tip | Should -Match 'not aligned'
+            (Get-Finding $a 'alignment').Status | Should -Be 'Warning'
+            (Get-Finding $a 'reply-to').Node | Should -Be 'origin'
+        }
+
+        It 'Junk Email because of an inbox rule, with a clean verdict' {
+            $a = Get-Analysis 'junk-by-inbox-rule'
+            (Get-Finding $a 'delivery').Status | Should -Be 'Warning'
+            (Get-Finding $a 'delivery').Tip | Should -Match 'Get-InboxRule'
+            (Get-Finding $a 'sfv').Status | Should -Be 'Passed'
+        }
+
+        It 'clock skew and a header without Received' {
+            $a = Invoke-Gct { Get-GctHeaderAnalysis -Text "Received: from b.contoso.com by c.contoso.com; Tue, 10 Nov 2026 10:00:00 +0000`nReceived: from a.contoso.com by b.contoso.com; Tue, 10 Nov 2026 10:00:30 +0000`nDate: Tue, 10 Nov 2026 09:59:59 +0000`n" }
+            $a.Route.Skew | Should -BeTrue
+            $a.Hops[1].DelayMs | Should -Be 0
+            Get-Finding $a 'route-skew' | Should -Not -BeNullOrEmpty
+            $b = Invoke-Gct { Get-GctHeaderAnalysis -Text "From: a@contoso.com`nSubject: hello`n" }
+            (Get-Finding $b 'route-none').Status | Should -Be 'Warning'
+        }
+
+        It 'every finding is on a step, and the code tables cover the values the findings use' {
+            foreach ($name in 'cloud-to-cloud', 'hybrid-on-premises', 'hybrid-not-recognised', 'gateway-in-front', 'dmarc-not-aligned', 'junk-by-inbox-rule') {
+                foreach ($f in (Get-Analysis $name).Findings) { ($f.Node -in 'origin', 'delivery' -or $f.Node -is [int]) | Should -BeTrue -Because "$name $($f.Id)" }
+            }
+            $codes = Invoke-Gct { Get-GctHeaderCodes }
+            foreach ($k in 'BLK', 'NSPM', 'SFE', 'SKA', 'SKB', 'SKI', 'SKN', 'SKQ', 'SKS', 'SPM') { $codes['sfv'].ContainsKey($k) | Should -BeTrue }
+            foreach ($k in 'pass', 'fail', 'softfail', 'neutral', 'none', 'temperror', 'permerror') { $codes['auth']['spf'].ContainsKey($k) | Should -BeTrue }
+        }
+    }
+
+    Context 'SPF evaluation (RFC 7208) against the simulated DNS' {
+        BeforeEach { Start-Sim; $script:State.Dns = @{} }
+
+        It 'ip4 with and without prefix, the qualifier of all' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 ip4:192.0.2.10 ip4:192.0.2.128/25 -all', 'MS=ms123')
+            (Test-Spf '192.0.2.10').Result | Should -Be 'pass'
+            (Test-Spf '192.0.2.200').Result | Should -Be 'pass'
+            $r = Test-Spf '198.51.100.1'
+            $r.Result | Should -Be 'fail'
+            $r.Record | Should -Be 'v=spf1 ip4:192.0.2.10 ip4:192.0.2.128/25 -all'
+            foreach ($q in @(@('~all', 'softfail'), @('?all', 'neutral'), @('+all', 'pass'), @('', 'neutral'))) {
+                $script:State.Dns['contoso.com|TXT'] = @("v=spf1 ip4:192.0.2.10 $($q[0])".Trim())
+                (Test-Spf '203.0.113.5').Result | Should -Be $q[1]
+            }
+        }
+
+        It 'ip6 prefixes and the address family' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 ip6:2001:db8:10::/48 -all')
+            (Test-Spf '2001:db8:10:1::25').Result | Should -Be 'pass'
+            (Test-Spf '2001:db8:11::25').Result | Should -Be 'fail'
+            (Test-Spf '192.0.2.1').Result | Should -Be 'fail'
+        }
+
+        It 'follows the includes, says which mechanism matched, counts the lookups' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 include:spf.contoso.com include:spf.protection.outlook.com -all')
+            $script:State.Dns['spf.contoso.com|TXT'] = @('v=spf1 ip4:203.0.113.0/24 -all')
+            $script:State.Dns['spf.protection.outlook.com|TXT'] = @('v=spf1 ip4:198.51.100.0/24 ip6:2001:db8:4::/48 -all')
+            $r = Test-Spf '198.51.100.25'
+            $r.Result | Should -Be 'pass'
+            $r.Mechanism | Should -Be 'include:spf.protection.outlook.com > ip4:198.51.100.0/24'
+            $r.Lookups | Should -Be 2
+            (Test-Spf '192.0.2.1').Result | Should -Be 'fail'
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 include:gone.fabrikam.com -all')
+            (Test-Spf '192.0.2.1').Result | Should -Be 'permerror'
+        }
+
+        It 'a and mx with their prefixes' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 a mx/24 a:relay.contoso.com//64 -all')
+            $script:State.Dns['contoso.com|A'] = @('192.0.2.10')
+            $script:State.Dns['contoso.com|MX'] = @('10 mail.contoso.com')
+            $script:State.Dns['mail.contoso.com|A'] = @('198.51.100.10')
+            $script:State.Dns['relay.contoso.com|AAAA'] = @('2001:db8:5::1')
+            (Test-Spf '192.0.2.10').Result | Should -Be 'pass'
+            $mx = Test-Spf '198.51.100.77'
+            $mx.Result | Should -Be 'pass'
+            $mx.Mechanism | Should -Be 'mx/24'
+            (Test-Spf '2001:db8:5::abcd').Result | Should -Be 'pass'
+            (Test-Spf '203.0.113.1').Result | Should -Be 'fail'
+        }
+
+        It 'redirect, and exists with a macro' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 redirect=_spf.contoso.com')
+            $script:State.Dns['_spf.contoso.com|TXT'] = @('v=spf1 exists:%{ir}.%{v}._spf.contoso.com ~all')
+            $script:State.Dns['10.2.0.192.in-addr._spf.contoso.com|A'] = @('127.0.0.2')
+            $r = Test-Spf '192.0.2.10'
+            $r.Result | Should -Be 'pass'
+            $r.Mechanism | Should -Be 'redirect=_spf.contoso.com > exists:10.2.0.192.in-addr._spf.contoso.com'
+            (Test-Spf '192.0.2.11').Result | Should -Be 'softfail'
+        }
+
+        It 'more than 10 DNS lookups, or 2 void lookups, is a permerror' {
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 ' + ((1..11 | ForEach-Object { "include:s$_.contoso.com" }) -join ' ') + ' -all')
+            foreach ($i in 1..11) { $script:State.Dns["s$i.contoso.com|TXT"] = @("v=spf1 ip4:203.0.113.$i -all") }
+            $r = Test-Spf '192.0.2.1'
+            $r.Result | Should -Be 'permerror'
+            $r.Error | Should -Match '10 DNS lookups'
+            (Test-Spf '203.0.113.10').Result | Should -Be 'pass'
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 a:x1.contoso.com a:x2.contoso.com a:x3.contoso.com -all')
+            (Test-Spf '192.0.2.1').Result | Should -Be 'permerror'
+        }
+
+        It 'none, several records, an unknown mechanism, ptr not evaluated, and DNS down' {
+            $script:State.Dns['contoso.com|TXT'] = @('MS=ms123')
+            (Test-Spf '192.0.2.1').Result | Should -Be 'none'
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 -all', 'v=spf1 +all')
+            (Test-Spf '192.0.2.1').Result | Should -Be 'permerror'
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 foo:bar -all')
+            (Test-Spf '192.0.2.1').Result | Should -Be 'permerror'
+            $script:State.Dns['contoso.com|TXT'] = @('v=spf1 ptr ~all')
+            $r = Test-Spf '192.0.2.1'
+            $r.Result | Should -Be 'softfail'
+            ($r.Notes -join ' ') | Should -Match 'ptr'
+            $script:State.DnsDown = $true
+            (Test-Spf '192.0.2.1').Result | Should -Be 'temperror'
+        }
+
+        It 'networks: prefixes on byte boundaries and inside a byte' {
+            Invoke-Gct { Test-GctIpInNetwork -Ip ([Net.IPAddress]'192.0.2.130') -Network ([Net.IPAddress]'192.0.2.128') -Prefix 25 } | Should -BeTrue
+            Invoke-Gct { Test-GctIpInNetwork -Ip ([Net.IPAddress]'192.0.2.127') -Network ([Net.IPAddress]'192.0.2.128') -Prefix 25 } | Should -BeFalse
+            Invoke-Gct { Test-GctIpInNetwork -Ip ([Net.IPAddress]'1.2.3.4') -Network ([Net.IPAddress]'0.0.0.0') -Prefix 0 } | Should -BeTrue
+        }
+    }
+
+    Context 'The verdicts of the DNS of today' {
+        It 'fixed since, still the case, changed' {
+            $a = Get-Analysis 'gateway-in-front'
+            $today = [ordered]@{
+                Spf = [ordered]@{ Domain = 'fabrikam.com'; Ip = '192.0.2.40'; Result = 'pass'; Mechanism = 'include:spf.fabrikam.com > ip4:192.0.2.0/24' }
+                Dmarc = [ordered]@{ Domain = 'fabrikam.com'; Found = $true; P = 'reject'; Pct = '100'; Adkim = 'r'; Aspf = 'r' }
+                Dkim = @([ordered]@{ Domain = 'fabrikam.com'; Selector = 's2048'; State = 'missing' })
+                Mx = [ordered]@{ Domain = 'contoso.com'; Records = @('mx0a-001234.pphosted.com'); Eop = $false }
+            }
+            Invoke-Gct { param($x, $t) Set-GctHeaderVerdict -Analysis $x -Today $t } @($a, $today)
+            (Get-Finding $a 'spf').Verdict.State | Should -Be 'fixed'
+            (Get-Finding $a 'spf').Verdict.Text | Should -Match 'already handled'
+            (Get-Finding $a 'dkim').Verdict.State | Should -Be 'still'
+            (Get-Finding $a 'dmarc').Verdict.State | Should -Be 'fixed'
+            (Get-Finding $a 'gateway').Verdict.State | Should -Be 'still'
+            (Get-Finding $a 'sfv').Verdict | Should -BeNullOrEmpty
+
+            $b = Get-Analysis 'cloud-to-cloud'
+            Invoke-Gct { param($x, $t) Set-GctHeaderVerdict -Analysis $x -Today $t } @($b, [ordered]@{ Spf = [ordered]@{ Result = 'softfail' }; Dmarc = [ordered]@{ Domain = 'fabrikam.com'; Found = $false }; Dkim = @([ordered]@{ Domain = 'fabrikam.com'; Selector = 'selector1'; State = 'revoked' }); Mx = $null })
+            (Get-Finding $b 'spf').Verdict.State | Should -Be 'changed'
+            (Get-Finding $b 'dmarc').Verdict.State | Should -Be 'changed'
+            (Get-Finding $b 'dkim').Verdict.State | Should -Be 'changed'
+
+            $c = Get-Analysis 'hybrid-on-premises'
+            Invoke-Gct { param($x, $t) Set-GctHeaderVerdict -Analysis $x -Today $t } @($c, [ordered]@{ Spf = $null; Dmarc = $null; Dkim = @([ordered]@{ Domain = 'contoso.com'; Selector = 'selector1'; State = 'present' }, [ordered]@{ Domain = 'contoso.com'; Selector = 'selector2'; State = 'present' }); Mx = $null })
+            (Get-Finding $c 'dkim').Verdict.State | Should -Be 'changed'
+            (Get-Finding $c 'dkim').Verdict.Text | Should -Match 'Get-DkimSigningConfig'
+        }
+    }
+
+    Context 'A run' {
+        It 'reads the file, asks the DNS of today, then one check per step of the chronology; nothing signs in' {
+            $state = @{ Dns = @{
+                    'fabrikam.com|TXT' = @('v=spf1 ip4:192.0.2.0/24 -all'); '_dmarc.fabrikam.com|TXT' = @('v=DMARC1; p=reject; rua=mailto:d@fabrikam.com')
+                    's2048._domainkey.fabrikam.com|TXT' = @('v=DKIM1; k=rsa; p=' + [Convert]::ToBase64String([byte[]]::new(294))); 'contoso.com|MX' = @('10 mx0a-001234.pphosted.com')
+                } }
+            $r = Invoke-Sim 'MessageHeaders' @{ HeaderFile = (Join-Path $script:Samples 'gateway-in-front.txt') } -State $state
+            Get-StageCrash $r | Should -BeNullOrEmpty
+            @($r.Steps.Stage | Select-Object -Unique) | Should -Be @('HeaderRead', 'HeaderDns', 'HeaderRoute')
+            @(Get-StageSteps $r 'HeaderDns').Name | Should -Be @('SPF today', 'DMARC today', 'DKIM key s2048 of fabrikam.com', 'MX today')
+            @(Get-StageSteps $r 'HeaderDns').Status | Should -Be @('Passed', 'Passed', 'Passed', 'Passed')
+            $route = @(Get-StageSteps $r 'HeaderRoute')
+            $route.Count | Should -Be 6
+            $route[0].Name | Should -Be '1. 10:31:02 Sender - invoices@fabrikam.com'
+            $route[3].Name | Should -Match '^4\. 10:31:40 Microsoft 365 entry \(EOP\) - '
+            $route[3].Status | Should -Be 'Failed'
+            $route[3].Details['[Failed] SPF fail for fabrikam.com'] | Should -Match 'DNS today: Fixed since'
+            $route[3].Details['Received field'] | Should -Match '^from mx0a-001234\.pphosted\.com'
+            $route[3].Details['Field Authentication-Results'] | Should -Match 'spf=fail'
+            $route[2].Message | Should -Match 'Longest wait'
+            $route[5].Name | Should -Match 'Mailbox - Delivered to: Junk Email folder'
+            $r.Route.Count | Should -Be 6
+            $r.Route[3].FindingsText | Should -Match '\[Failed\] SPF fail for fabrikam\.com \(DNS today: fixed\)'
+            $r.HeaderSummary.Fixed | Should -BeGreaterThan 0
+            $r.HeaderSummary.Transit | Should -Be '36 s'
+            $r.Status | Should -Be 'Failed'
+            $r.Error | Should -Match '^4\. 10:31:40 Microsoft 365 entry'
+            @($script:State.Calls | Where-Object Method -ne 'TLS') | Should -BeNullOrEmpty
+            @($r.Trace | Where-Object Method -eq 'DNS').Count | Should -BeGreaterThan 3
+        }
+
+        It 'without the DNS of today: no DNS query at all, and text pasted works like a file' {
+            $text = [IO.File]::ReadAllText((Join-Path $script:Samples 'cloud-to-cloud.txt'))
+            $r = Invoke-Sim 'MessageHeaders' @{ HeaderText = $text; SkipDnsCrossCheck = $true }
+            $r.StageTitles.Keys | Should -Not -Contain 'HeaderDns'
+            @($r.Trace | Where-Object Method -eq 'DNS') | Should -BeNullOrEmpty
+            (Get-Step $r 'Message headers').Details['Source'] | Should -Be 'text pasted'
+            $r.Status | Should -Be 'Passed'
+            $r.HeaderSummary.DnsCrossCheck | Should -BeFalse
+        }
+
+        It 'no DNS server answering: the header is read offline, one probe query only, no failure' {
+            $r = Invoke-Sim 'MessageHeaders' @{ HeaderFile = (Join-Path $script:Samples 'gateway-in-front.txt'); DnsServer = @('192.0.2.53') } -State @{ DnsDown = $true }
+            $dns = Get-Step $r 'DNS of today'
+            $dns.Status | Should -Be 'Skipped'
+            $dns.Message | Should -Match 'No answer from the DNS server 192\.0\.2\.53 for microsoft\.com'
+            $dns.Message | Should -Match 'read offline'
+            @($r.Trace | Where-Object Method -eq 'DNS').Count | Should -Be 1
+            @(Get-StageSteps $r 'HeaderRoute').Count | Should -BeGreaterThan 2
+            $r.HeaderSummary.DnsCrossCheck | Should -BeFalse
+            $r.HeaderSummary.DnsOffline | Should -BeTrue
+            @($r.Steps | Where-Object { $_.Stage -eq 'HeaderDns' -and $_.Status -eq 'Failed' }) | Should -BeNullOrEmpty
+        }
+
+        It 'a text without any header field stops the test' {
+            $r = Invoke-Sim 'MessageHeaders' @{ HeaderText = 'not a header at all' }
+            (Get-Step $r 'Message headers').Status | Should -Be 'Failed'
+            @(Get-StageSteps $r 'HeaderRoute').Status | Should -Be @('Skipped')
+        }
+
+        It 'the report has the Route file and panel' {
+            $r = Invoke-Sim 'MessageHeaders' @{ HeaderFile = (Join-Path $script:Samples 'hybrid-on-premises.txt'); SkipDnsCrossCheck = $true }
+            $report = Export-GctReport -Result $r -OutputPath (Join-Path $script:Artifacts 'test-reports')
+            (Get-Content -LiteralPath $report.Files.Route -TotalCount 1) | Should -Be ([char]0xFEFF + 'Step;Kind;TimeUtc;Wait;SegmentName;Server;From;Ip;Tls;LongestWait;EntersMicrosoft365;Status;FindingsText')
+            @(Import-Csv -LiteralPath $report.Files.Route -Delimiter ';').Count | Should -Be 6
+            $html = [IO.File]::ReadAllText($report.Files.Html)
+            $html | Should -Match 'id="data-route"'
+            $html | Should -Match 'Recognised as the on-premises organisation'
+            (Get-Content -LiteralPath $report.Files.Summary -Raw | ConvertFrom-Json).HeaderSummary.LongestWait | Should -Be '2 min 16 s at EXMBX2.corp.contoso.com'
+        }
+    }
+
+    Context 'Settings' {
+        It 'needs the headers, one way only, and an existing file; no source mailbox needed' {
+            $c = Invoke-Gct { Get-GctDefaultConfiguration }
+            $c.TestType = 'MessageHeaders'; $c.SourceMailbox = ''
+            (Test-GctConfiguration -Configuration $c).Problems | Should -Be @('The MessageHeaders test needs the headers of a message: a file (Target.HeaderFile, -HeaderFile, .eml or .txt) or the text (Target.HeaderText, -HeaderText).')
+            (Test-GctConfiguration -Configuration $c -File).IsValid | Should -BeTrue
+            $c.HeaderFile = Join-Path $script:Samples 'missing.eml'
+            ((Test-GctConfiguration -Configuration $c).Problems -join "`n") | Should -Match 'Target\.HeaderFile: file not found'
+            $c.HeaderText = 'Received: x'
+            ((Test-GctConfiguration -Configuration $c).Problems -join "`n") | Should -Match 'give the headers one way only'
+            $c.HeaderFile = ''
+            (Test-GctConfiguration -Configuration $c).IsValid | Should -BeTrue
+        }
+
+        It 'checks the DNS server and the probe name' {
+            $c = Invoke-Gct { Get-GctDefaultConfiguration }
+            $c.TestType = 'MessageHeaders'; $c.HeaderText = 'Received: x'
+            $c.DnsServer = @('192.0.2.53', 'dns.contoso.com', '2001:db8::53')
+            (Test-GctConfiguration -Configuration $c).IsValid | Should -BeTrue
+            $c.DnsServer = @('not a server!')
+            ((Test-GctConfiguration -Configuration $c).Problems -join "`n") | Should -Match "Test\.DnsServer: 'not a server!'"
+            $c.DnsServer = @(); $c.DnsProbeName = 'x'
+            ((Test-GctConfiguration -Configuration $c).Problems -join "`n") | Should -Match 'Test\.DnsProbeName'
+        }
+
+        It 'skips the DNS of today with SkipDnsCrossCheck' {
+            Get-GctScenarioStages -TestType MessageHeaders | Should -Be @('HeaderRead', 'HeaderDns', 'HeaderRoute')
+            Get-GctScenarioStages -TestType MessageHeaders -Configuration @{ SkipDnsCrossCheck = $true } | Should -Be @('HeaderRead', 'HeaderRoute')
+        }
+    }
+}
+
 Describe 'Secrets never written' {
     AfterEach { Stop-GctLog; Remove-Module GraphConnectivityTests -ErrorAction SilentlyContinue }
 
@@ -949,13 +1333,13 @@ Describe 'Report' {
 
     It 'writes the HTML report with every marker of the template replaced' {
         # The template is maintained separately: a marker the engine does not fill is a pending dependency, not an engine failure.
-        $known = @('TITLE', 'SUMMARY_JSON', 'STEPS_JSON', 'MAILBOXES_JSON', 'FREEBUSY_JSON', 'EVENTS_JSON', 'PROVISIONING_JSON', 'DNS_JSON', 'ACTIONS_JSON', 'TRACE_JSON')
+        $known = @('TITLE', 'SUMMARY_JSON', 'STEPS_JSON', 'MAILBOXES_JSON', 'FREEBUSY_JSON', 'EVENTS_JSON', 'PROVISIONING_JSON', 'DNS_JSON', 'ACTIONS_JSON', 'TRACE_JSON', 'ROUTE_JSON')
         $template = [IO.File]::ReadAllText((Join-Path $script:Root 'templates\Report.template.html'))
         $unknown = @([regex]::Matches($template, '\{\{([A-Z_]+)\}\}') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique | Where-Object { $_ -notin $known })
         if ($unknown.Count) { Set-ItResult -Pending -Because "the report template still has markers the engine does not fill ($($unknown -join ', ')): it is being rewritten"; return }
         $r = Invoke-Sim 'FreeBusy' @{ TargetMailboxes = @('bob@contoso.com', 'carol@contoso.com', 'someone@gmail.com') } -SignIn
         $report = Export-GctReport -Result $r -OutputPath (Join-Path $script:Artifacts 'test-reports')
-        foreach ($k in 'Steps', 'Mailboxes', 'FreeBusy', 'Events', 'Provisioning', 'Dns', 'Actions', 'Trace', 'Summary', 'Html') { Test-Path -LiteralPath $report.Files[$k] | Should -BeTrue -Because "$k is written" }
+        foreach ($k in 'Steps', 'Mailboxes', 'FreeBusy', 'Events', 'Provisioning', 'Dns', 'Actions', 'Route', 'Trace', 'Summary', 'Html') { Test-Path -LiteralPath $report.Files[$k] | Should -BeTrue -Because "$k is written" }
         $html = [IO.File]::ReadAllText($report.Files.Html)
         $html | Should -Not -Match '\{\{[A-Za-z_]+\}\}'
         $html | Should -Match '<title>Graph Connectivity Tests \| Failed \| FreeBusy</title>'
@@ -1033,6 +1417,13 @@ Describe 'Command line (Invoke-GraphConnectivityTests.ps1)' {
         $r.Output | Should -Match 'The FreeBusy test needs at least one target mailbox'
         Get-ChildItem -LiteralPath (Join-Path $script:CliDir 'logs') -Filter 'GraphConnectivityTests_*.log' | Should -Not -BeNullOrEmpty
         Test-Path -LiteralPath (Join-Path $script:CliDir 'reports') | Should -BeFalse
+    }
+
+    It 'MessageHeaders from a file, without the DNS of today: exit code 0 and the chronology in the console' {
+        $r = Invoke-Cli @('-ConfigPath', $script:NoTarget, '-HeaderFile', (Join-Path $PSScriptRoot 'samples\headers\cloud-to-cloud.txt'), '-SkipDnsCrossCheck', '-NoReport')
+        $r.ExitCode | Should -Be 0
+        $r.Output | Should -Match 'MessageHeaders'
+        $r.Output | Should -Match 'Exchange Online\s+DB9PR04MB8100\.eurprd04\.prod\.outlook\.com'
     }
 
     It 'exit code 1 for a command-line value out of its set' {

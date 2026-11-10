@@ -1,14 +1,14 @@
 ---
 title: Graph Connectivity Tests
 subtitle: User guide
-version: 1.0.0
+version: 1.1.0
 author: Nicolas Fabert
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Graph Connectivity Tests — User guide
 
-> What you need before the first test, then one command per everyday question: **can Alice see Bob's free/busy?**, **does it work from Microsoft 365 to on-premises, and back?**, **with another organisation?**, **why this Availability error?**, **does this user have a mailbox?**, **is the DNS of my domain right?** How the tool works, the sign-in clients and their permissions, the configuration in detail, the report and the internals are in the [developer guide](GraphConnectivityTests-Guide.md).
+> What you need before the first test, then one command per everyday question: **can Alice see Bob's free/busy?**, **does it work from Microsoft 365 to on-premises, and back?**, **with another organisation?**, **why this Availability error?**, **does this user have a mailbox?**, **is the DNS of my domain right?**, **what happened to this message?** How the tool works, the sign-in clients and their permissions, the configuration in detail, the report and the internals are in the [developer guide](GraphConnectivityTests-Guide.md).
 
 > [!IMPORTANT]
 > Files downloaded from the Internet may be blocked by Windows and fail to run. Before using this project, unblock every file in the downloaded folder:
@@ -22,7 +22,7 @@ updated: 2026-11-09
 ```cards
 checklist | Prerequisites | Chapter 1: the workstation, the browser, the network, the account that signs in, then the one-time setup.
 terminal | Everyday use | Chapter 2: one command per question, with the step of the report that answers it.
-compare | Which test? | Chapter 3: FreeBusy, MailboxServices, Provisioning, DomainDns or All, and the options used most.
+compare | Which test? | Chapter 3: FreeBusy, MailboxServices, Provisioning, DomainDns, MessageHeaders or All, and the options used most.
 file | Results | Chapter 4: the console, the report, the files and the exit codes.
 ```
 
@@ -34,7 +34,7 @@ file | Results | Chapter 4: the console, the report, the files and the exit code
 | Workstation | Windows 10 / 11 or Windows Server 2016 to 2025, **PowerShell 7.4** or later (7.5 or later for the Windows 11 look of the window). Nothing to install. It does not have to be in the domain. |
 | Browser | Microsoft Edge or Google Chrome, for the sign-in window. Without one (or on a server without a desktop), a device code is shown instead. |
 | Network | HTTPS to `login.microsoftonline.com`, `graph.microsoft.com` and `outlook.office365.com`; to the on-premises Exchange when one is involved; DNS queries for `DomainDns`. |
-| Account | The **source mailbox**: the user who asks for the free/busy signs in, with its password and its MFA. The test runs as this user. |
+| Account | The **source mailbox**: the user who asks for the free/busy signs in, with its password and its MFA. The test runs as this user. `MessageHeaders` needs no account: nothing signs in. |
 
 **No application to register.** By default the source user signs in with *Microsoft Office*, a public client of Microsoft present in every tenant and already allowed to read calendars through Microsoft Graph: no consent to ask, nothing to create in Entra ID.
 
@@ -162,15 +162,37 @@ Folder and message synchronization (delta, then the deltaLink sent again), its o
 
 Without sign-in: MX, SPF (with its includes followed and the DNS lookups counted), Autodiscover, DKIM (selector1, selector2), DMARC, MTA-STS with its policy file, TLS-RPT and the device registration records. Then, signed in, the domain in the tenant (verified, services) and **the records Microsoft 365 expects for it**, each compared with what the DNS publishes. Without `-Domain`, the domain of the source mailbox is used.
 
-### 2.9 Everything at once
+### 2.9 What happened to this message?
+
+A message arrived late, went to Junk Email, or was refused as spoofed. Its **headers** tell the whole story: copy them (Outlook: open the message, *File > Properties > Internet headers*; Outlook on the web: *... > View > View message details*) or save the message as an `.eml` file.
+
+```powershell
+.\Invoke-GraphConnectivityTests.ps1 -HeaderFile .\message.eml
+.\Invoke-GraphConnectivityTests.ps1 -HeaderText (Get-Clipboard -Raw)                 # the headers copied from Outlook
+.\Invoke-GraphConnectivityTests.ps1 -HeaderFile .\message.eml -SkipDnsCrossCheck      # no DNS query at all
+```
+
+Nothing signs in and no permission is needed: the header is read on this computer (only its header block; the body and the attachments are not read). The **Route of the message** stage is the chronology, one check per step:
+
+- **the sender** first: when the message was written (the *Date* field), the mail client, the client IP, the first server;
+- **each hop** (*Received* field): its time, the **wait** before it and **who held the message** — the sender side, a sending service, a third-party gateway (Proofpoint, Mimecast, Cisco...), Exchange on-premises, the entry into Microsoft 365, Exchange Online. The **longest wait** is marked;
+- **the mailbox** last: the folder (Inbox, Junk Email...), the spam confidence level and the verdict.
+
+Each finding is on the step it is about, with what to do: SPF, DKIM, DMARC (alignment computed again) and composite authentication where the message enters Microsoft 365; *On-premises message not recognised* there when a message of your Exchange on-premises arrives as anonymous Internet mail (the inbound connector does not match); the *Enhanced Filtering for Connectors* tip on a gateway in front of Microsoft 365; on the mailbox, why it went to Junk Email (spam verdict, an inbox rule, the Blocked Senders of the user). *Follow the message* gives the commands to copy: `Get-MessageTraceV2` in Exchange Online, `Get-MessageTrackingLog` on-premises, the Network Message ID for Microsoft Defender.
+
+Then **Is it still the case? (DNS of today)** compares with the DNS now: SPF of the MAIL FROM domain evaluated for the original sending IP, DMARC of the From domain, the DKIM keys of the signatures, the MX of the recipient domain. A finding already handled since is marked **fixed since** (for example: SPF failed at the time, the record allows that IP today). `-SkipDnsCrossCheck` reads the header without any DNS query. When no DNS server answers (a computer offline, a closed network), the test sees it at the first query and reads the header offline: the DNS stage is skipped, never failed, and every finding stays as the header shows it. `-DnsServer 192.0.2.53` (or `Test.DnsServer` in the configuration file, or the field of the window) asks another DNS server than those of Windows.
+
+![A message header analysis in the window: the chronology, the entry into Microsoft 365 open with its findings](images/gct-gui-headers.png)
+
+### 2.10 Everything at once
 
 ```powershell
 .\Invoke-GraphConnectivityTests.ps1 -TestType All -SourceMailbox alice@contoso.com -TargetMailbox bob@contoso.com
 ```
 
-Free/busy, mailbox services, provisioning and DNS, with one sign-in.
+Free/busy, mailbox services, provisioning and DNS, with one sign-in (not the message headers: they need a message).
 
-### 2.10 Automation with an application
+### 2.11 Automation with an application
 
 A scheduled task has no user to sign in: your application signs in with a certificate and the checks use `/users/<source>` instead of `/me`.
 
@@ -180,7 +202,7 @@ A scheduled task has no user to sign in: your application signs in with a certif
 
 The certificate is looked for in `Cert:\CurrentUser\My`, then `Cert:\LocalMachine\My`, with its private key. *Token claims* lists the application permissions (roles) in the token and says when the calendar permission is missing. The application can read but not change the automatic replies. The permissions to grant: [developer guide, chapter 7](GraphConnectivityTests-Guide.md#7-the-application-context). The exit code (chapter 4) tells the task whether the test passed.
 
-### 2.11 The window
+### 2.12 The window
 
 ```powershell
 .\Invoke-GraphConnectivityTests.ps1 -Gui
@@ -190,6 +212,8 @@ The same tests and the same report as the command line, with the progress shown 
 
 - **Timeline**: one node per stage, in order, with its result (*2 passed, 1 failed · 3 checks · 1.4 s*). A stage without problem folds when it ends; a click on its title unfolds it. Under each check, *Diagnostics* unfolds its details and its HTTP exchanges; a click on an exchange shows the request and the response (secrets masked). At the end, the window scrolls to the first problem.
 - **Diagnostic log**: the same, in time order, as text: stages, HTTP exchanges (one line each), checks.
+
+For `MessageHeaders` the *Mailboxes* card becomes *Message headers*: paste the headers, or choose an `.eml` or `.txt` file with **Browse**; the sign-in is not used. Each step of the chronology is a check: its *Diagnostics* show its facts, its findings with what to do, the raw *Received* field and the header fields each finding is read from.
 
 The **Diagnostics** switch unfolds everything, and adds the details, the requests and the responses to the diagnostic log. **Copy the log** copies the whole diagnostic log, with the requests and the responses, to paste into a ticket.
 
@@ -204,7 +228,8 @@ The **Diagnostics** switch unfolds everything, and adds the details, the request
 | whether synchronization, availability and automatic replies work for the source | `MailboxServices` | only with `-AllowWrite` (automatic replies, restored) |
 | whether an address has a mailbox, where and with which license | `Provisioning` | no |
 | whether the DNS records of a domain are right for Exchange Online | `DomainDns` | no |
-| all of it | `All` | only with `-AllowWrite` |
+| how a message travelled, why it was late, spoofed or in Junk Email (from its headers, no sign-in) | `MessageHeaders` | no |
+| all of it (except the message headers) | `All` | only with `-AllowWrite` |
 
 The options you will use most:
 
@@ -221,18 +246,20 @@ The options you will use most:
 | `-Cloud Global\|USGov\|USGovDoD\|China` | the Microsoft 365 cloud |
 | `-FreeBusyDays` | the period asked, from today (1 to 62 days) |
 | `-AllowWrite` | let `MailboxServices` change the automatic replies (and restore them) |
+| `-HeaderFile` · `-HeaderText` · `-SkipDnsCrossCheck` | `MessageHeaders`: the `.eml` or `.txt` file, or the headers as text (either selects the test) · no comparison with the DNS of today |
+| `-DnsServer` | DNS servers asked instead of those of Windows (`DomainDns`, DNS of today); none answering, the header is read offline |
 
 `Get-Help .\Invoke-GraphConnectivityTests.ps1 -Full` lists every parameter with examples.
 
 <!-- icon: file -->
 ## 4. Results
 
-- The **console** shows each check as it runs, a free/busy map of the targets, then a summary: the verdict, the first problem, the path of the report and of the log.
-- The **report** is `reports\GraphConnectivityTests_<test>_<date>\GraphConnectivityTests.html`, a single file: the result, what was tested, the checks in order with the requests under each one, the free/busy view and the HTTP trace. Click a check or a request: the request sent and the response received in full.
-- Next to it, the same data as CSV (`Steps`, `Mailboxes`, `FreeBusy`, `Events`, `Provisioning`, `Dns`, `Actions`, `Trace`) and `Summary.json`; a daily log in `logs\`.
+- The **console** shows each check as it runs, a free/busy map of the targets (or the chronology of a message), then a summary: the verdict, the first problem, the path of the report and of the log.
+- The **report** is `reports\GraphConnectivityTests_<test>_<date>\GraphConnectivityTests.html`, a single file: the result, what was tested, the checks in order with the requests under each one, the free/busy view (or the route of a message) and the HTTP trace. Click a check or a request: the request sent and the response received in full.
+- Next to it, the same data as CSV (`Steps`, `Mailboxes`, `FreeBusy`, `Events`, `Provisioning`, `Dns`, `Actions`, `Route`, `Trace`) and `Summary.json`; a daily log in `logs\`.
 - **Exit code**: `0` passed, `1` failed, `2` warnings or blocked (for example `MailboxServices` without `-AllowWrite`).
 
 ![A free/busy test in the console: the stages, the checks and the free/busy map of the targets](images/gct-console.png)
 
 > [!WARNING]
-> The reports contain directory and calendar data — names, addresses, licenses, free/busy and, when the source may see them, the subjects and locations of meetings. Keep them like the mailboxes themselves. Tokens and authorization codes are never written.
+> The reports contain directory and calendar data — names, addresses, licenses, free/busy and, when the source may see them, the subjects and locations of meetings — and, for `MessageHeaders`, every field of the header (addresses, subject, servers, IP addresses). Keep them like the mailboxes themselves. Tokens and authorization codes are never written.

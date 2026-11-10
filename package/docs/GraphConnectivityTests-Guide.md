@@ -1,14 +1,14 @@
 ---
 title: Graph Connectivity Tests
 subtitle: Developer guide
-version: 1.0.0
+version: 1.1.0
 author: Nicolas Fabert
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Graph Connectivity Tests — Developer guide
 
-> **Microsoft Graph connectivity tests in the user context**, with Microsoft Graph instead of EWS: the source user signs in — with *Microsoft Office*, no application to register — and asks the free/busy of the target mailboxes, in the same organisation, **in both directions of a hybrid organisation** and **across organisations**, with the cause of each Availability error. Plus the mailbox services, the mailbox provisioning and the DNS records of a domain. Every check shows **the request sent and the response received**.
+> **Microsoft Graph connectivity tests in the user context**, with Microsoft Graph instead of EWS: the source user signs in — with *Microsoft Office*, no application to register — and asks the free/busy of the target mailboxes, in the same organisation, **in both directions of a hybrid organisation** and **across organisations**, with the cause of each Availability error. Plus the mailbox services, the mailbox provisioning, the DNS records of a domain, and the analysis of message headers (route, authentication, anti-spam, compared with the DNS of today). Every check shows **the request sent and the response received**.
 
 > [!IMPORTANT]
 > Files downloaded from the Internet may be blocked by Windows and fail to run. Before using this project, unblock every file in the downloaded folder:
@@ -27,6 +27,7 @@ clock | FreeBusy | Can the source see the free/busy of the targets? Same organis
 refresh | MailboxServices | Synchronization (delta), availability, MailTips and automatic replies of the source, through Microsoft Graph (chapters 2.8 to 2.10).
 people | Provisioning | Does each address have a mailbox, where, of which type, with which Exchange license (chapter 2.11).
 search | DomainDns | MX, SPF, Autodiscover, DKIM, DMARC, MTA-STS, TLS-RPT, and the records Microsoft 365 expects for the domain (chapters 2.12 and 2.13).
+file | MessageHeaders | The route of a message from its headers, its authentication and anti-spam verdict, then the DNS of today; no sign-in (chapter 2.14).
 ```
 
 ## Quick start
@@ -72,6 +73,7 @@ The tests:
 | `MailboxServices` | synchronization, notification, availability and automatic replies of the source mailbox | `mailFolders/delta`, `messages/delta`, `getSchedule`, `getMailTips`, `mailboxSettings` |
 | `Provisioning` | whether each address has a mailbox, where, of which type, with which Exchange license | `users`, `licenseDetails`, a probe of the Inbox (not read), `mailboxSettings/userPurpose` |
 | `DomainDns` | the DNS records of a domain for Exchange Online | the DNS resolver of Windows, then `domains/{domain}/serviceConfigurationRecords` |
+| `MessageHeaders` | how a message travelled and what Microsoft 365 decided, from its headers; then whether the DNS of today still explains it | the header block (`Target.HeaderFile` · `-HeaderFile`, or `Target.HeaderText` · `-HeaderText`), the DNS resolver of Windows; no sign-in |
 
 Where each part of the test runs:
 
@@ -196,6 +198,20 @@ No sign-in, the resolver of Windows (`Resolve-DnsName`), every query in the trac
 
 Signed in: `Domain <domain>` (`GET /domains/<domain>`: verified, authentication type, services) and `Expected records` (`serviceConfigurationRecords`, each one resolved and compared). Records that do not match are a *Warning*, normal for the MX and Autodiscover while mail or mailboxes stay on-premises; optional records are *Skipped*.
 
+### 2.14 Message headers
+
+The `MessageHeaders` test reads the header block of a message — `Target.HeaderFile` · `-HeaderFile` (an `.eml` or `.txt` file; only the header block is read, the first 2 MB of a bigger file) or `Target.HeaderText` · `-HeaderText` — and **signs in nowhere**: no client, no permission, no request to Microsoft 365. Three stages:
+
+- **HeaderRead** · *Message headers*: the fields, folded lines joined (RFC 5322) and encoded words decoded (RFC 2047, `B` and `Q`, any charset of .NET); the subject, From, To, Date, Message-ID, Network Message ID, tenant. Without any field the test stops. *Follow the message*: the commands to copy — `Get-MessageTraceV2 -MessageId` with a period of one day around the delivery, `Get-MessageTrackingLog` on every transport server on-premises, the Network Message ID for Microsoft Defender.
+- **HeaderDns** · *Is it still the case? (DNS of today)*, unless `Test.SkipDnsCrossCheck` · `-SkipDnsCrossCheck`: with `Resolve-GctDns`, every query in the trace. *SPF today*: the SPF of the MAIL FROM domain **evaluated for the original sending IP** (`check_host()` of RFC 7208: `ip4`, `ip6` with prefixes, `a` and `mx` with their prefixes, `include`, `redirect`, `exists`, the four qualifiers, macros, 10 DNS lookups and 2 void lookups at most — beyond, `permerror`; `ptr` is not evaluated and the step says so). *DMARC today*: the record of the From domain, else of its organisational domain (policy, `sp`, `pct`, alignment modes). *DKIM key*: each selector of the signatures (published, revoked with an empty `p=`, missing; the size of the key), or `selector1` and `selector2` of Exchange Online when the message is not signed. *MX today*: the MX of the recipient domain, when a gateway was in front of Microsoft 365. These checks describe the DNS of today: they are *Passed* or *Warning*, never *Failed*.
+- **HeaderRoute** · *Route of the message (chronology)*: one check per step, in time order — **the sender** (the *Date* field, the mail client, the client IP, the host and IP of the oldest *Received*), **each hop** (time in UTC, the wait before it, who held the message), **the mailbox** (folder, SCL, verdict). The status of a step is its worst finding.
+
+**Who held the message.** Each *Received* is parsed (`from`, `by`, `with`, `id`, `for`, `via`, the date; comments taken out first, so that `with` inside `(version=TLS1_2 ...)` is not a clause; the IP and reverse DNS of the sending server; TLS). The server that received it is classified: a server of Microsoft 365 (`*.prod.outlook.com`, `*.protection.outlook.com`...) — the **entry into Microsoft 365** is the first one that received from outside or from the outbound servers of another tenant, before it the **sender tenant**, after it **Exchange Online** —; a **third-party gateway** (Proofpoint, Mimecast, Cisco Secure Email, Barracuda, Trend Micro, Sophos...); **Exchange on-premises** (an Exchange Server build in `id`, with its version); a **sending service**; else the **sender side**, or *after Microsoft 365*. The wait before a hop is the time the previous server held the message (queue and transfer); a hop dated before the previous one is a **clock skew** (wait shown as 0). The **longest wait** is marked: more than a minute is a note, more than five minutes a *Warning* with the tip for the segment that held it.
+
+**Findings and their step.** *Authentication-Results* (the topmost: the verdict of the receiving organisation), *Received-SPF*, *DKIM-Signature*, ARC, *X-Forefront-Antispam-Report* (SFV, CAT, SFTY, SCL, IPV, DIR...), *X-Microsoft-Antispam* (BCL), *X-Microsoft-Antispam-Mailbox-Delivery* (folder and reason), the `-Untrusted` fields (the verdict of the **sending** organisation, not yours), *X-MS-Exchange-Organization-AuthAs*, *X-MS-Exchange-CrossTenant-FromEntityHeader*, *X-MS-Exchange-SkipListedInternetSender*... give one finding each, with what to do. The DMARC alignment is computed again (relaxed and strict, organisational domain of RFC 7489). Each finding is put on the step it is about: SPF, DKIM, DMARC, composite authentication, ARC and the hybrid attribution on the entry into Microsoft 365 (*On-premises message not recognised*: a message of Exchange on-premises received as anonymous Internet mail — the inbound connector of type OnPremises did not match); the Enhanced Filtering tip on the gateway; the spam verdict and the folder on the mailbox; Reply-To, Sender and a late *Date* on the sender. With the DNS of today, each finding that DNS can confirm gets a verdict: **still the case**, **fixed since**, **changed since**.
+
+**One code table, one parser, two front ends.** The meanings of the codes (SFV, CAT, SFTY, IPV, SCL, BCL, compauth reasons, Mailbox-Delivery, AuthAs, FromEntityHeader, the gateways and sending services) are in `data\header-codes.json`, written from the public Microsoft documentation of the anti-spam message headers and the RFCs; values Microsoft does not document are marked *observed*. The web page of Graph Connectivity Tests (a separate project) uses the same file and the same parser rules, and the tests of both read the same anonymised samples (`tests\samples\headers`): the two give the same hops, findings and texts.
+
 <!-- icon: layers -->
 ## 3. Tests
 
@@ -205,9 +221,10 @@ Signed in: `Domain <domain>` (`GET /domains/<domain>`: verified, authentication 
 | `MailboxServices` | SignIn, Source, Sync, Availability, AutoReply | yes | with `-AllowWrite` |
 | `Provisioning` | Discovery, SignIn, Provisioning | yes | no |
 | `DomainDns` | Dns, SignIn, DomainRecords | yes | no |
+| `MessageHeaders` | HeaderRead, HeaderDns, HeaderRoute | no | no |
 | `All` | Discovery, OnPremises, Dns, SignIn, Source, Target, FreeBusy, Hybrid, Sync, Availability, AutoReply, Provisioning, DomainRecords | once | with `-AllowWrite` |
 
-*OnPremises* is left out with `SkipOnPremisesChecks`; *Hybrid* runs only with `AdminChecks`. `Get-GctTestCatalog` lists the tests, `Get-GctScenarioStages -TestType <test> -Configuration <settings>` the stages a run will do.
+*OnPremises* is left out with `SkipOnPremisesChecks`; *Hybrid* runs only with `AdminChecks`; *HeaderDns* is left out with `SkipDnsCrossCheck`. `All` does not include `MessageHeaders` (it needs a message). A failure of *HeaderRead* (no header field) stops the test. `Get-GctTestCatalog` lists the tests, `Get-GctScenarioStages -TestType <test> -Configuration <settings>` the stages a run will do.
 
 <!-- icon: check -->
 ## 4. Results
@@ -265,6 +282,7 @@ What each request needs (the permission the step names when it is refused):
 | AutoReply · change (`-AllowWrite`) | `PATCH mailboxSettings` | `MailboxSettings.ReadWrite` | not done |
 | Provisioning | `users` with `assignedPlans`, `licenseDetails` | `User.Read.All` | `User.Read.All` |
 | DomainRecords | `GET domains/{domain}`, `serviceConfigurationRecords` | `Domain.Read.All` | `Domain.Read.All` |
+| MessageHeaders | none: the header is read on the workstation, the DNS of today with the resolver of Windows | none | none |
 | Hybrid (`-AdminChecks`) | Exchange Online administration API | an Exchange administrator role (View-Only Organization Management is enough) | the application with access to the Exchange Online administration API |
 
 A `403` from Microsoft Graph names the missing permission and, for a user, the client to use instead; for an application, the admin consent and the scope of RBAC for Applications or of an application access policy.
@@ -295,7 +313,7 @@ For a scheduled task: `Identity.Context Application`, `Identity.ClientId` (the a
 <!-- icon: checklist -->
 ## 9. Prerequisites
 
-- PowerShell 7.4 or later (7.5+ for the Fluent theme of the window), Windows 10/11 or Windows Server 2016 to 2025. `DomainDns` needs `Resolve-DnsName` (Windows).
+- PowerShell 7.4 or later (7.5+ for the Fluent theme of the window), Windows 10/11 or Windows Server 2016 to 2025. `DomainDns` and the DNS of today of `MessageHeaders` need `Resolve-DnsName` (Windows).
 - HTTPS to `login.microsoftonline.com`, `graph.microsoft.com`, `outlook.office365.com` (Autodiscover, administration API), and to the on-premises Exchange when one is involved; Microsoft Edge or Google Chrome for the sign-in window.
 - The source account (and its MFA); an Exchange administrator for `-AdminChecks`; an app registration with a certificate for the Application context.
 
@@ -317,6 +335,8 @@ Copy the folder, then unblock the files: `Get-ChildItem <folder> -Recurse -File 
 | `Target.SkipOnPremisesChecks` | `$false` | `$true` skips the On-premises stage |
 | `Target.Domain` | empty | `DomainDns`: the domain to check; empty = the domain of the source |
 | `Target.Cloud` | `Global` | `Global`, `USGov` (GCC High), `USGovDoD`, `China` (21Vianet) |
+| `Target.HeaderFile` | empty | `MessageHeaders`: an `.eml` or `.txt` file with the headers (relative to the tool folder, or absolute) |
+| `Target.HeaderText` | empty | `MessageHeaders`: the headers as text (2 MB at most); one of `HeaderFile` and `HeaderText`, not both |
 | `Identity.Context` | `User` | `User` or `Application` |
 | `Identity.ClientId` | `MicrosoftOffice` | `MicrosoftOffice`, `GraphCommandLineTools`, `ExchangeOnlinePowerShell` or an application ID |
 | `Identity.RedirectUri` | empty | redirect URI of your application; empty = the default of the client |
@@ -327,7 +347,7 @@ Copy the folder, then unblock the files: `Get-ChildItem <folder> -Recurse -File 
 | `Identity.OnPremisesCredentialScheme` | `Auto` | `Credential`: `Auto` (the best scheme EWS offers), `Negotiate`, `NTLM` or `Basic` |
 | `Identity.OnPremisesUserName` | empty | `Credential`: user name proposed, `DOMAIN\user` or `user@domain` (empty = the source mailbox); the password is never stored |
 | `Identity.AdminClientId` | `ExchangeOnlinePowerShell` | client of the administrator checks, or an application ID |
-| `Test.DefaultType` | `FreeBusy` | `FreeBusy`, `MailboxServices`, `Provisioning`, `DomainDns`, `All` |
+| `Test.DefaultType` | `FreeBusy` | `FreeBusy`, `MailboxServices`, `Provisioning`, `DomainDns`, `MessageHeaders`, `All` |
 | `Test.SignIn` | `Auto` | `Auto`, `Window`, `DeviceCode` |
 | `Test.AllowWrite` | `$false` | `$true` lets `MailboxServices` change the automatic replies |
 | `Test.AdminChecks` | `$false` | `$true` adds the Hybrid stage |
@@ -338,6 +358,9 @@ Copy the folder, then unblock the files: `Get-ChildItem <folder> -Recurse -File 
 | `Test.CertificateWarningDays` | `30` | 0 to 365 |
 | `Test.MaxRetries` | `2` | 0 to 10: new attempts of a Microsoft Graph request after HTTP 429, 503 or 504 |
 | `Test.UserAgent` | `GraphConnectivityTests/1.0` | `User-Agent` of the requests |
+| `Test.SkipDnsCrossCheck` | `$false` | `MessageHeaders`: `$true` leaves out the DNS of today (no DNS query) |
+| `Test.DnsServer` | `@()` | DNS servers asked (IP addresses or names) instead of those of Windows, for `DomainDns` and the DNS of today |
+| `Test.DnsProbeName` | `microsoft.com` | `MessageHeaders`: name asked first; no answer means no DNS server answers, and the header is read offline |
 | `Report.OutputPath` | `reports` | one folder per run under it |
 | `Report.FilePrefix` | `GraphConnectivityTests` | prefix of the report files |
 | `Report.Formats` | `@('Csv', 'Html')` | `Csv`, `Html` (`Summary.json` is always written) |
@@ -353,8 +376,9 @@ Relative paths are relative to the tool folder.
 ## 12. Command line
 
 ```powershell
-.\Invoke-GraphConnectivityTests.ps1 [-TestType FreeBusy|MailboxServices|Provisioning|DomainDns|All]
+.\Invoke-GraphConnectivityTests.ps1 [-TestType FreeBusy|MailboxServices|Provisioning|DomainDns|MessageHeaders|All]
     [-SourceMailbox <smtp>] [-TargetMailbox <smtp[]>] [-OnPremisesHost <fqdn>] [-SkipOnPremisesChecks] [-Domain <domain>]
+    [-HeaderFile <file>] [-HeaderText <text>] [-SkipDnsCrossCheck] [-DnsServer <servers>]
     [-Cloud Global|USGov|USGovDoD|China] [-Context User|Application] [-ClientId <name or id>] [-RedirectUri <uri>]
     [-TenantId <id or domain>] [-CertificateThumbprint <thumbprint>] [-OnPremisesAuthentication OAuth|Windows|Credential]
     [-OnPremisesCredentialScheme Auto|Negotiate|NTLM|Basic] [-OnPremisesCredential <pscredential>]
@@ -362,7 +386,7 @@ Relative paths are relative to the tool folder.
     [-OutputPath <folder>] [-NoReport] [-ConfigPath <file>] [-Gui]
 ```
 
-`-TargetMailbox` accepts a list (commas, semicolons or spaces). `-AccessToken <token>` skips the sign-in with a Microsoft Graph token already obtained — for integration only: it can stay in the PowerShell history, and the tool warns about it. `Get-Help .\Invoke-GraphConnectivityTests.ps1 -Full` lists every parameter with examples.
+`-TargetMailbox` accepts a list (commas, semicolons or spaces). `-HeaderFile` or `-HeaderText` without `-TestType` selects `MessageHeaders`. `-AccessToken <token>` skips the sign-in with a Microsoft Graph token already obtained — for integration only: it can stay in the PowerShell history, and the tool warns about it. `Get-Help .\Invoke-GraphConnectivityTests.ps1 -Full` lists every parameter with examples.
 
 The module can also be used directly:
 
@@ -382,6 +406,10 @@ Export-GctReport -Result $result -OutputPath .\reports
 
 `-Gui` opens the window: the same tests, the same engine and the same report as the command line, the progress shown live as a timeline of the stages (a stage without problem folds; each check unfolds its details and its HTTP exchanges, request and response) or as a diagnostic log in time order (copied whole with *Copy the log*), the device code shown when there is one; a test can be cancelled.
 
+For `MessageHeaders` the *Mailboxes* card becomes *Message headers*: a box to paste the headers, a file chosen with *Browse* (text pasted wins over a file), and *Do not compare with the DNS of today*; the sign-in and the options are not used. The chronology is the stage *Route of the message*: one check per step, its *Diagnostics* with the facts of the step, its findings (what to do, the verdict of the DNS of today), the raw *Received* field and the header fields each finding is read from.
+
+![A message header analysis in the window, dark theme](images/gct-gui-headers-dark.png)
+
 <!-- icon: chart -->
 ## 14. Reading the report
 
@@ -397,7 +425,13 @@ One row per target with the calendar items Exchange returned (busy, tentative, o
 
 The console shows a map per mailbox and day, one cell per hour from 07:00 to 20:00 (· free, ▒ tentative, █ busy, ▓ away, ░ elsewhere; `. ~ # O w` with `GCT_ICONS=Ascii`).
 
-### 14.2 The HTTP trace
+### 14.2 The route of a message
+
+For `MessageHeaders`, the *Route* tab: the message in a few values (subject, From, To, delivered in, longest wait, SPF / DKIM / DMARC, composite authentication, SCL and verdict), then the chronology on a rail — the sender, each hop with its time, its wait and who held it, the mailbox — each step unfolding its findings with what to do and the verdict of the DNS of today, and the commands to follow the message. The same steps are in `Route.csv`, and the whole analysis (every field of the header, every finding) in `Summary.json` (`Headers`, `HeaderSummary`).
+
+![The Route tab of a message header analysis](images/gct-report-route.png)
+
+### 14.3 The HTTP trace
 
 Click a request: the request sent and the response received, headers and body (JSON and SOAP indented, HTML summarised). DNS queries are in the same trace. What to look at:
 
@@ -432,6 +466,7 @@ One folder per run, `reports\<prefix>_<test>_<yyyyMMdd-HHmmss>\`:
 | `<prefix>-Provisioning.csv` | user, synchronization, mailbox in Exchange Online, type, licenses and Exchange plans |
 | `<prefix>-Dns.csv` | the records found and expected, and their status |
 | `<prefix>-Actions.csv` | what the run changed (automatic replies scheduled and restored) |
+| `<prefix>-Route.csv` | `MessageHeaders`: one line per step of the chronology (sender, hops, mailbox), its status and its findings |
 | `<prefix>-Trace.csv` | every HTTP request and response and every DNS query (secrets masked) |
 | `<prefix>-Summary.json` | the whole result, for scripts |
 | `<prefix>.html` | the self-contained report |
@@ -460,16 +495,18 @@ CSV files are UTF-8 with BOM; a cell starting with `=`, `+`, `-` or `@` is prefi
 | `src\…ExchangeAdmin.ps1` | the optional Hybrid stage (Exchange Online administration API) |
 | `src\…Mailbox.ps1` | the Sync, Availability, AutoReply and Provisioning stages |
 | `src\…Dns.ps1` | the Dns and DomainRecords stages |
+| `src\…Headers.ps1` | `MessageHeaders`: the header parser, the route and its segments, the findings and their step, the SPF evaluator (RFC 7208), the DNS of today and the verdicts; the HeaderRead, HeaderDns and HeaderRoute stages |
 | `src\…Run.ps1` | `Add-GctStep` and `Invoke-GctConnectivityTest`: the stages in order, blocking stages, result |
 | `src\…Report.ps1` | CSV, JSON and HTML report (`Export-GctReport`) |
 | `src\…Gui.ps1` | the WPF window |
 | `templates\Report.template.html` | the HTML report, filled with the JSON of the run |
+| `data\header-codes.json` | the code tables of the message header analysis, shared with the web page of Graph Connectivity Tests |
 | `config\GraphConnectivityTests.config.psd1` | the example configuration |
 
 <!-- icon: beaker -->
 ## 17. Tests
 
-`.\Run-Tests.ps1` runs the Pester tests (Pester 6.1 or later) in `tests\`, without any connection: `Send-GctHttpRequest` (HTTP) and `Invoke-GctDnsQuery` (DNS) are the only functions that reach the network, and the tests replace them with simulated answers. The results go to `artifacts\pester-results.xml`. GitHub Actions runs the same command on PowerShell 7 (`.github\workflows\ci.yml`).
+`.\Run-Tests.ps1` runs the Pester tests (Pester 6.1 or later) in `tests\`, without any connection: `Send-GctHttpRequest` (HTTP) and `Invoke-GctDnsQuery` (DNS) are the only functions that reach the network, and the tests replace them with simulated answers. The results go to `artifacts\pester-results.xml`. The message header analysis is tested on the anonymised samples of `tests\samples\headers` (the same as the tests of the web page), the SPF evaluator against the simulated DNS. GitHub Actions runs the same command on PowerShell 7 (`.github\workflows\ci.yml`).
 
 The repository tools (not in the package):
 
@@ -531,12 +568,16 @@ The *Free/busy of …* step shows the code, the message and the cause the tool d
 | `AADSTS700027` | the certificate is not one of the application. |
 | Hybrid: `401` / `403` on a cmdlet | the account is not an Exchange administrator (View-Only Organization Management), or the API did not accept the client. |
 | *SPF*: more than 10 lookups, or several records | receivers answer `PermError`: merge the records, flatten the includes. |
+| Headers: *On-premises message not recognised* | Exchange Online received a message of Exchange on-premises as anonymous Internet mail: the inbound connector of type OnPremises does not match — `TlsSenderCertificateName` equal to the certificate the on-premises Send connector presents (or `SenderIPAddresses`), `RequireTls`. |
+| Headers: SPF fail behind a gateway | Microsoft 365 checked SPF on the IP of the gateway in front of it: Enhanced Filtering for Connectors on the inbound connector of the gateway, or the MX straight to Exchange Online Protection. |
+| Headers: DMARC fail while SPF passes | the MAIL FROM domain is not aligned with the From domain: a custom return-path in the From domain, or DKIM signed with `d=` the From domain. |
+| Headers: *Delivered to: Junk Email folder* with a low SCL | the mailbox moved it: an inbox rule (`Get-InboxRule`) or the Blocked Senders of the user (`Get-MailboxJunkEmailConfiguration`). |
 | *MTA-STS*: policy not readable | `https://mta-sts.<domain>/.well-known/mta-sts.txt` must answer `200` with a `mode`. |
 
 <!-- icon: shield -->
 ## Appendix B. Security and data
 
-Access, refresh and ID tokens stay in memory: they are never written to the console, the log, the trace or the report. The trace masks tokens, client assertions, device and authorization codes and cookies (except the affinity cookies of Exchange). No password is typed into the tool: users sign in in the window of Microsoft or with a device code, applications with a certificate of the certificate store. The reports contain directory and calendar data: keep them as such.
+Access, refresh and ID tokens stay in memory: they are never written to the console, the log, the trace or the report. The trace masks tokens, client assertions, device and authorization codes and cookies (except the affinity cookies of Exchange). No password is typed into the tool: users sign in in the window of Microsoft or with a device code, applications with a certificate of the certificate store. The reports contain directory and calendar data, and for `MessageHeaders` every field of the header: keep them as such. `MessageHeaders` sends nothing anywhere: the DNS of today asks the resolver of Windows for names only (the domains of the header, the DKIM selectors, the reversed sending IP inside an SPF `exists` macro).
 
 <!-- icon: tag -->
 ## Appendix C. Versions

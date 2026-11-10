@@ -18,6 +18,7 @@ package/src/GraphConnectivityTests.ExchangeAdmin.ps1 -text whitespace=blank-at-e
 package/src/GraphConnectivityTests.FreeBusy.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
 package/src/GraphConnectivityTests.Graph.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
 package/src/GraphConnectivityTests.Gui.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Headers.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
 package/src/GraphConnectivityTests.Http.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
 package/src/GraphConnectivityTests.Mailbox.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
 package/src/GraphConnectivityTests.OAuth.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol

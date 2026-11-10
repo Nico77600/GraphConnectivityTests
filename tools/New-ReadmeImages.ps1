@@ -31,7 +31,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0  (from Web Services Client for Exchange 1.0.0)
+    Version : 1.1.0  (from Web Services Client for Exchange 1.0.0)
     Part of : Graph Connectivity Tests (repository tool, not in the package)
 #>
 [CmdletBinding()]
@@ -222,18 +222,18 @@ try {
         "<span class=""badge"">$(Get-ReadmeIcon 'tag' 'icon-sm')MIT license</span>"
     ) -join ''
     $banner = "<header class=""hero rb-hero""><div class=""rb-hero-grid""><div>" +
-        "<div class=""hero-top""><div class=""hero-logo"">$(Get-ReadmeIcon 'calendar')</div><div><div class=""eyebrow"">Free/Busy $mid Mailbox services $mid Provisioning $mid Domain DNS</div><h1>Graph Connectivity Tests</h1>" +
+        "<div class=""hero-top""><div class=""hero-logo"">$(Get-ReadmeIcon 'calendar')</div><div><div class=""eyebrow"">Free/Busy $mid Mailbox services $mid Provisioning $mid Domain DNS $mid Message headers</div><h1>Graph Connectivity Tests</h1>" +
         "<div class=""rb-author"">by <strong>$([System.Net.WebUtility]::HtmlEncode($assets.Author))</strong></div></div></div>" +
-        "<p class=""lead""><strong>Microsoft Graph connectivity tests in the user context</strong>: free/busy in the same organisation, in both directions of a hybrid organisation and across organisations, with <strong>the cause of each Availability error</strong> &mdash; plus mailbox services, provisioning and DNS, every request sent and every response received shown.</p>" +
+        "<p class=""lead""><strong>Microsoft Graph connectivity tests in the user context</strong>: free/busy in the same organisation, in both directions of a hybrid organisation and across organisations, with <strong>the cause of each Availability error</strong> &mdash; plus mailbox services, provisioning, DNS and the route of a message from its headers, every request sent and every response received shown.</p>" +
         "<div class=""badges"">$badges</div></div>" +
         "<div class=""rb-stats"">" +
         "<div class=""rb-stat""><b>4</b><span><strong>free/busy paths</strong>same organisation, cloud to on-premises, on-premises to cloud, another organisation</span></div>" +
-        "<div class=""rb-stat""><b>5</b><span><strong>tests</strong>FreeBusy, MailboxServices, Provisioning, DomainDns, All</span></div>" +
+        "<div class=""rb-stat""><b>6</b><span><strong>tests</strong>FreeBusy, MailboxServices, Provisioning, DomainDns, MessageHeaders, All</span></div>" +
         "<div class=""rb-stat""><b>0</b><span><strong>application to register</strong>the user signs in with Microsoft Office</span></div>" +
         "</div></div></header>"
     New-ReadmeGraphic -Name 'banner' -Body $banner -Width 1080
 
-    # Principles: the cards block of the introduction of the guide (the four tests).
+    # Principles: the cards block of the introduction of the guide (the five tests).
     New-ReadmeGraphic -Name 'principles' -Body (ConvertTo-ReadmeCards $assets.Cards[0].Lines 'rb-cards2') -Width 1080
 
     # How it works: the stages of the free/busy test as a vertical pipeline, and the four paths.
