@@ -1,0 +1,10 @@
+{
+  "runtimeRoot": "package",
+  "testMode": "runner",
+  "testEntry": "Run-Tests.ps1",
+  "tests": [
+    "tests/GraphConnectivityTests.Tests.ps1"
+  ],
+  "packageBuilder": "tools/New-GraphConnectivityTestsPackage.ps1",
+  "packageEntry": "Invoke-GraphConnectivityTests.ps1"
+}

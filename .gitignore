@@ -1,0 +1,10 @@
+# Run-time output
+reports/
+logs/
+# Test results, test reports, packages and review screenshots
+artifacts/
+# Editors and backups
+*.user
+*.bak
+.vs/
+.vscode/
