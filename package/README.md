@@ -1,6 +1,6 @@
 # Graph Connectivity Tests
 
-Microsoft Graph connectivity tests in the user context: free/busy in the same organisation, in both directions of a hybrid organisation and across organisations — plus mailbox services, provisioning and the DNS records of a domain.
+Microsoft Graph connectivity tests in the user context: free/busy in the same organisation, in both directions of a hybrid organisation and across organisations — plus mailbox services, provisioning, the DNS records of a domain, and the analysis of message headers (route, authentication, anti-spam, compared with the DNS of today; no sign-in).
 
 Author: Nicolas Fabert.
 
@@ -18,7 +18,7 @@ This folder contains everything needed to run the tool: `Invoke-GraphConnectivit
 - PowerShell 7.4 or later.
 - Microsoft Edge or Google Chrome for the sign-in window, or device code sign-in.
 - HTTPS to `login.microsoftonline.com`, `graph.microsoft.com`, `outlook.office365.com`, and to the on-premises Exchange when one is involved.
-- The source mailbox and its password. No app registration with the default client (Microsoft Office); an Exchange administrator for `-AdminChecks`; an app registration with a certificate for the Application context.
+- The source mailbox and its password (none for `MessageHeaders`). No app registration with the default client (Microsoft Office); an Exchange administrator for `-AdminChecks`; an app registration with a certificate for the Application context.
 
 ## Quick start
 ```powershell
@@ -29,6 +29,7 @@ notepad .\config\GraphConnectivityTests.config.psd1     # the source mailbox and
 .\Invoke-GraphConnectivityTests.ps1 -SourceMailbox onprem.user@contoso.com -TargetMailbox alice@contoso.com       # on-premises to Microsoft 365
 .\Invoke-GraphConnectivityTests.ps1 -TestType Provisioning -SourceMailbox alice@contoso.com -TargetMailbox new.user@contoso.com
 .\Invoke-GraphConnectivityTests.ps1 -TestType DomainDns -Domain contoso.com -SourceMailbox alice@contoso.com
+.\Invoke-GraphConnectivityTests.ps1 -HeaderFile .\message.eml                                                     # what happened to this message?
 .\Invoke-GraphConnectivityTests.ps1 -Gui                                                                         # the same in a window
 ```
 
@@ -39,6 +40,7 @@ notepad .\config\GraphConnectivityTests.config.psd1     # the source mailbox and
 | `GraphConnectivityTests.psd1` | Module manifest. |
 | `GraphConnectivityTests.psm1` | Module loader. |
 | `config\` | Example configuration. |
+| `data\` | Code tables of the message header analysis (`header-codes.json`, shared with the web page of Graph Connectivity Tests). |
 | `docs\` | User and developer guide files. |
 | `src\` | Module implementation. |
 | `templates\` | HTML report template. |

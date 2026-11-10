@@ -13,7 +13,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 $script:C = @{ Reset = ''; Bold = ''; Dim = ''; Accent = ''; AccentBg = ''; Green = ''; Yellow = ''; Red = ''; White = '' }
@@ -252,6 +252,15 @@ function Write-GctRunBanner {
     $dot = [char]0x00B7
     $banner = [ordered]@{}
     $banner['Test'] = @('Target', "$($scenario.Name) $dot $($scenario.DisplayName)")
+    if ($Settings.TestType -eq 'MessageHeaders') {
+        $banner['Headers'] = @('Mail', $(if (([string]$Settings.HeaderText).Trim()) { "text pasted ($(([string]$Settings.HeaderText).Length) characters)" } else { [string]$Settings.HeaderFile }))
+        $banner['DNS'] = @('Search', $(if ($Settings.SkipDnsCrossCheck) { 'not compared (-SkipDnsCrossCheck): no DNS query' } else { $(if (@($Settings.DnsServer | Where-Object { $_ }).Count) { "compared with the DNS of today (DNS server $(@($Settings.DnsServer) -join ', ')); offline when no DNS answers" } else { 'compared with the DNS of today (resolver of Windows); offline when no DNS answers' }) }))
+        $banner['Sign-in'] = @('Key', 'none: the header is read on this computer')
+        $banner['Report'] = @('Report', $(if ($NoReport) { 'none (-NoReport)' } else { $Settings.OutputPath }))
+        if ($LogPath) { $banner['Log'] = @('Log', $LogPath) }
+        Write-GctBanner -Title 'Graph Connectivity Tests' -Subtitle "Message headers $dot route $dot authentication $dot anti-spam" -Details $banner
+        return
+    }
     $banner['Source'] = @('People', [string]$Settings.SourceMailbox)
     if (@($Settings.TargetMailboxes).Count) { $banner['Targets'] = @('People', (@($Settings.TargetMailboxes) -join ', ')) }
     if ($Settings.TestType -in 'DomainDns', 'All') { $banner['Domain'] = @('Search', $(if ($Settings.Domain) { [string]$Settings.Domain } else { "$(Get-GctAddressDomain ([string]$Settings.SourceMailbox)) (domain of the source)" })) }
@@ -281,6 +290,12 @@ function Write-GctRunSummary {
     $values['Checks'] = @('Target', ('{0} passed {5} {1} warning(s) {5} {2} blocked {5} {3} failed {5} {4} skipped' -f $n.Passed, $n.Warning, $n.Blocked, $n.Failed, $n.Skipped, $dot))
     $fb = @($Result.FreeBusy)
     if ($fb.Count) { $values['Free/busy'] = @('Clock', ('{0} of {1} mailbox(es) answered' -f @($fb | Where-Object Status -ne 'Failed').Count, $fb.Count)) }
+    $hs = Get-GctField $Result 'HeaderSummary'
+    if ($hs) {
+        $values['Route'] = @('Clock', "$($hs.Hops) hop(s) $dot delivered in $($hs.Transit)$(if ($hs.LongestWait) { " $dot longest wait $($hs.LongestWait)" })")
+        $values['Auth'] = @('Shield', "SPF $(if ($hs.Spf) { $hs.Spf } else { '-' }) $dot DKIM $(if ($hs.Dkim) { $hs.Dkim } else { '-' }) $dot DMARC $(if ($hs.Dmarc) { $hs.Dmarc } else { '-' })$(if ($hs.Compauth) { " $dot compauth $($hs.Compauth)" })")
+        if ($hs.DnsCrossCheck) { $values['DNS today'] = @('Search', "$($hs.Fixed) finding(s) fixed since the message was received") }
+    }
     if ($Result.Error) { $values['First issue'] = @('Fail', $Result.Error) }
     $values['Duration'] = @('Clock', (Format-GctDuration $Result.DurationSeconds))
     $values['Report'] = @('Report', $ReportText)
@@ -349,10 +364,10 @@ function Write-GctFreeBusyGrid {
 }
 
 # SIG # Begin signature block
-# MIImKwYJKoZIhvcNAQcCoIImHDCCJhgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAuPgILcWzWdKnK
-# IbHJSlay3KgDLf+FL9hcbtm5J3GZQKCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCByTqiMuHsRlw8Y
+# q3xDm0vmPzQbPecuwIwZV3ybY/yrq6CCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -424,28 +439,28 @@ function Write-GctFreeBusyGrid {
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEjCCGA4CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCTfsMVxhAt
-# EbnPRqKkoQRj1K3R7XpDeFXYjtUtubZspzANBgkqhkiG9w0BAQEFAASCAgCA9rcq
-# nkB85UpyX73PcI1UQbp/jr6xqHXJyLkFhxVyx031UG4ghVSndbyPOYBJsaBx871p
-# k0MLxBmHFd3/Th1zkRT7n+rEEnupaZAgRwqJN+vikBRN9Hxx6elhfefLCavVxrty
-# QuhTO3Lt/nihZ9IhUSORaFae1RFeBmE7jg8/k5vb67+tKruRj4YJifvizPGII/vG
-# XQdRxdzGepZxzYMylEYn0bABx9GHKXhF26nO/Skutarb7Wem9nQvnEF+95iszPLB
-# Kr6wkq6ziT1DLi3vQGmLwz+yNowwbMfomQeeBQvSggKLtKL3WDgBLRAFxnyf+EAo
-# YWnfoPyr2PmAH9zJY8ny7YZTI/bH+nf5EuAo6as9bHFNhGaK2HRJF5RjiuhR7Bp6
-# obEV7p58a/8nYY8QHYkK8pizqiiABPj4KHIO97+C5IUdx4CtBnw4kfA6n8GhWqf4
-# 27fnGJH1GnCFSk1NAevkQ2/jQTVdcbTB5RFg+fkCULbTvHuLGeAzF1WNX02XdIxc
-# 063a6PfgFsS9Od1oFoLmVodl/UNwUr+ovezS6njpD98JzbmNyKHMaFzpghHGrVDF
-# ObtS9IA78taFMYx55j5+Yz9vXrZmBzQJFph8UkvwOf3qcCoVph1gfvaZU9NltKTS
-# PG/3sRuO0Uw9fSz9WGVnEWQrC4uua8tMujcFyqGCFM8wghTLBgorBgEEAYI3AwMB
-# MYIUuzCCFLcGCSqGSIb3DQEHAqCCFKgwghSkAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCABW2lh/+9Z
+# I+HzPlEVAudA2/aOBsmjuoncF7nVZNRL6zANBgkqhkiG9w0BAQEFAASCAgCw3wD5
+# ZyLHh9aW5NaGXYBObliXnuZPxFW0FnUv4BhUVKt3fjgDU96HnGSbaz1gjT5YGnUe
+# zz+m6hOYOLWR4pWsQ67/Zy3koz3QSgPTsHstUPIZnL0RLL7ngJkpEXxtNcw5aCd8
+# 3jD+SlpMC9YjRoWBrlgvkx15ewnVDlPd2zbXRJgLiqOrfFe+FbC6h9N94BiTe6c6
+# qWHjEN1cElb52bHt+j3TiX1f0RA621ED7QrrpAezE4rU1cCZQ0LN7hQG45pxaepd
+# nBl0BUToKsRb0O1W3QOBr8G2wxnOQo7GMnxpmboShgOTrf0VpMl87/oxticAupY7
+# N2qnIt98vlflzX/3L2FXBH2Mn8bsrhOaykeThDeFkyv7zNWbD6bdmrw3DZHU55Sw
+# IroHKyKzi3yQKMlYiU3Qa80LinP4arIKeOlavpHxWzH67In2ua0A95opbP0d/2Zb
+# KhkVyGMbKm6xWqxjJQod5aZYJLfbOnzZ0mysw9c5U4vXu/QIZWKmC+WPPbhdNR+v
+# frvKUCC2QLOQFh0ZHiYmypEPWPQKxyyC2PeHs8LD+kCOjg4HGFz+SM3ePvuo2BcI
+# nspy7CPMCsgw9gtGtxK94E4XdJ+rJmxT42FI2XLjgPfV59dJ8PmLLLX6dXqx89Ia
+# lrq1kXi/KLXceFK/ATMfHzlF5HCqmQXgLCHvu6GCFM4wghTKBgorBgEEAYI3AwMB
+# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEINLJJ4/FnTotSSLHISCsbsVeTdEbR8P0zPIXonn5Qo++AghyHzIxofZu
-# ihgPMjAyNjExMTAxMDIzMTdaMAMCAQECEDUVnFXawunemvx36FBWVoGgghGnMIIE
+# BAIBBQAEIJNNvTFbvxw26fsn7mFkEr+/8yvyOjUqlMg3LWecHFW2Aghp11RxGCKI
+# NxgPMjAyNjExMTAxODI1NTJaMAMCAQECEG+TVGgn9a+n7WjH/z3w5WigghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -540,17 +555,17 @@ function Write-GctFreeBusyGrid {
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlcwggJTAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjMxN1owKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIPSi
-# WBB88A7zrYByQqXxZ+TpL1BDat14eJrjtHRFs//SMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjU1MlowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIPqS
+# eTGNf6lZjYstYBEz5n2f+8LEIUUoaCSrwIh3LFA7MIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIESDBGAiEAoSC/CjmHdIUUrrr4yu/qaD4xS0xqcubW/TIvEVdK7Y4CIQD9
-# PihR/hQGJSTfrhDrcc4W5tWOAmchbWLzJFWgh+jfuw==
+# zj0EAwIERzBFAiEAslLIiPWwuJicXxFRCZ28VWlfT0dNpih8bQB6TEF2cDACIAM0
+# xUCGQbd8bF9Qs2CrjOJmMbfq0DProbCxGT8FIsag
 # SIG # End signature block

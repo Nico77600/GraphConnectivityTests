@@ -16,14 +16,14 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 # Section.Key of the configuration file -> key of the settings hashtable.
 $script:ConfigSchema = [ordered]@{
     Target   = [ordered]@{
         SourceMailbox = 'SourceMailbox'; TargetMailboxes = 'TargetMailboxes'; OnPremisesHost = 'OnPremisesHost'; SkipOnPremisesChecks = 'SkipOnPremisesChecks'
-        Domain = 'Domain'; Cloud = 'Cloud'
+        Domain = 'Domain'; Cloud = 'Cloud'; HeaderFile = 'HeaderFile'; HeaderText = 'HeaderText'
     }
     Identity = [ordered]@{
         Context = 'Context'; ClientId = 'ClientId'; RedirectUri = 'RedirectUri'; Scopes = 'Scopes'; TenantId = 'TenantId'; CertificateThumbprint = 'CertificateThumbprint'
@@ -33,7 +33,8 @@ $script:ConfigSchema = [ordered]@{
     Test     = [ordered]@{
         DefaultType = 'TestType'; SignIn = 'SignIn'; AllowWrite = 'AllowWrite'; AdminChecks = 'AdminChecks'; FreeBusyDays = 'FreeBusyDays'
         FreeBusyIntervalMinutes = 'FreeBusyIntervalMinutes'; OAuthPollTimeoutSeconds = 'OAuthPollTimeoutSeconds'; HttpTimeoutSeconds = 'HttpTimeoutSeconds'
-        CertificateWarningDays = 'CertificateWarningDays'; MaxRetries = 'MaxRetries'; UserAgent = 'UserAgent'
+        CertificateWarningDays = 'CertificateWarningDays'; MaxRetries = 'MaxRetries'; UserAgent = 'UserAgent'; SkipDnsCrossCheck = 'SkipDnsCrossCheck'
+        DnsServer = 'DnsServer'; DnsProbeName = 'DnsProbeName'
     }
     Report   = [ordered]@{ OutputPath = 'OutputPath'; FilePrefix = 'ReportPrefix'; Formats = 'ReportFormats'; CsvDelimiter = 'CsvDelimiter' }
     Logging  = [ordered]@{ Path = 'LogPath'; RetentionDays = 'LogRetentionDays' }
@@ -80,6 +81,8 @@ $script:Scenarios = @(
        Description = 'For each address (the target mailboxes, else the source): does a mailbox exist, where (Exchange Online or on-premises), of which type (user, shared, room, equipment), with which Exchange license and synchronization from Active Directory.' }
     @{ Name = 'DomainDns'; DisplayName = 'Domain DNS records'; Stages = @('Dns', 'SignIn', 'DomainRecords')
        Description = 'The DNS records of a domain for Exchange Online (MX, SPF, Autodiscover, DKIM, DMARC, MTA-STS, TLS-RPT), then, signed in, the records Microsoft 365 expects for this domain (domains/serviceConfigurationRecords) compared with the published ones.' }
+    @{ Name = 'MessageHeaders'; DisplayName = 'Message headers (route, authentication, anti-spam)'; Stages = @('HeaderRead', 'HeaderDns', 'HeaderRoute')
+       Description = 'How a message travelled and what Microsoft 365 decided, from its headers (an .eml or .txt file, or text pasted) - nothing signs in. The chronology from the sender to the mailbox: each hop with its time, the wait and who held the message (sender, gateway, Exchange on-premises, Microsoft 365), SPF, DKIM, DMARC and composite authentication, the spam verdict, the folder and the hybrid attribution, each finding with what to do. Then, optional, the DNS of today (SPF for the sending IP, DMARC, DKIM keys, MX), so that a finding already handled since is marked fixed.' }
     @{ Name = 'All'; DisplayName = 'All the tests'; Stages = @('Discovery', 'OnPremises', 'Dns', 'SignIn', 'Source', 'Target', 'FreeBusy', 'Hybrid', 'Sync', 'Availability', 'AutoReply', 'Provisioning', 'DomainRecords'); Writes = $true
        Description = 'Every test in one run, with one sign-in: free/busy, mailbox services (automatic replies only read unless -AllowWrite), provisioning and DNS.' }
 )
@@ -98,6 +101,9 @@ $script:StageInfo = [ordered]@{
     AutoReply     = @{ Title = 'Automatic replies'; Icon = 'Mail' }
     Provisioning  = @{ Title = 'Mailbox provisioning'; Icon = 'People' }
     DomainRecords = @{ Title = 'Records expected by Microsoft 365'; Icon = 'Shield' }
+    HeaderRead    = @{ Title = 'Message headers'; Icon = 'Mail' }
+    HeaderDns     = @{ Title = 'Is it still the case? (DNS of today)'; Icon = 'Search' }
+    HeaderRoute   = @{ Title = 'Route of the message (chronology)'; Icon = 'Clock' }
 }
 
 function Get-GctTestCatalog {
@@ -120,7 +126,7 @@ function Get-GctTestCatalog {
 function Get-GctScenarioStages {
     <#
         Stages a test runs with these settings: the on-premises checks only when not skipped, the
-        administrator checks only when asked (Test.AdminChecks).
+        administrator checks only when asked (Test.AdminChecks), the DNS of today unless skipped (Test.SkipDnsCrossCheck).
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$TestType, [hashtable]$Configuration = @{})
@@ -130,6 +136,7 @@ function Get-GctScenarioStages {
     foreach ($stage in $scenario.Stages) {
         if ($stage -eq 'OnPremises' -and $Configuration['SkipOnPremisesChecks']) { continue }
         if ($stage -eq 'Hybrid' -and -not $Configuration['AdminChecks']) { continue }
+        if ($stage -eq 'HeaderDns' -and $Configuration['SkipDnsCrossCheck']) { continue }
         $stage
     }
 }
@@ -151,6 +158,8 @@ function Get-GctDefaultConfiguration {
         SkipOnPremisesChecks     = $false
         Domain                   = ''
         Cloud                    = 'Global'
+        HeaderFile               = ''
+        HeaderText               = ''
         Context                  = 'User'
         ClientId                 = 'MicrosoftOffice'
         RedirectUri              = ''
@@ -172,6 +181,9 @@ function Get-GctDefaultConfiguration {
         CertificateWarningDays   = 30
         MaxRetries               = 2
         UserAgent                = 'GraphConnectivityTests/1.0'
+        SkipDnsCrossCheck        = $false
+        DnsServer                = @()
+        DnsProbeName             = 'microsoft.com'
         OutputPath               = Join-Path $script:ToolRoot 'reports'
         ReportPrefix             = 'GraphConnectivityTests'
         ReportFormats            = @('Csv', 'Html')
@@ -224,7 +236,7 @@ function Test-GctConfiguration {
     $guid = '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
     $names = @($script:Scenarios | ForEach-Object { $_.Name })
     if ([string]$c.TestType -notin $names) { $problems.Add("Test.DefaultType must be one of: $($names -join ', ').") }
-    if ([string]$c.SourceMailbox -notmatch $address) { $problems.Add("Target.SourceMailbox must be an SMTP address (the mailbox that signs in and asks for the free/busy): '$($c.SourceMailbox)'.") }
+    if ([string]$c.TestType -ne 'MessageHeaders' -and [string]$c.SourceMailbox -notmatch $address) { $problems.Add("Target.SourceMailbox must be an SMTP address (the mailbox that signs in and asks for the free/busy): '$($c.SourceMailbox)'.") }
     foreach ($t in @($c.TargetMailboxes | Where-Object { $_ })) { if ([string]$t -notmatch $address) { $problems.Add("Target.TargetMailboxes: '$t' is not an SMTP address.") } }
     if (@($c.TargetMailboxes | Where-Object { $_ }).Count -gt 20) { $problems.Add('Target.TargetMailboxes: 20 mailboxes at most in one run (limit of getSchedule).') }
     if (-not $File -and [string]$c.TestType -eq 'FreeBusy' -and -not @($c.TargetMailboxes | Where-Object { $_ }).Count) { $problems.Add('The FreeBusy test needs at least one target mailbox (Target.TargetMailboxes, -TargetMailbox).') }
@@ -232,6 +244,16 @@ function Test-GctConfiguration {
         $problems.Add("Target.OnPremisesHost must be a host name (FQDN of the Availability service, for example mail.contoso.com, without https:// nor /EWS/Exchange.asmx): '$($c.OnPremisesHost)'.")
     }
     if ([string]$c.Domain -and [string]$c.Domain -notmatch '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$') { $problems.Add("Target.Domain must be a domain name: '$($c.Domain)'.") }
+    if ([string]$c.HeaderText -and [string]$c.HeaderFile) { $problems.Add('Target.HeaderFile and Target.HeaderText: give the headers one way only (a file, or the text).') }
+    if ([string]$c.HeaderFile -and -not [string]$c.HeaderText -and -not (Test-Path -LiteralPath ([string]$c.HeaderFile) -PathType Leaf)) { $problems.Add("Target.HeaderFile: file not found: '$($c.HeaderFile)'.") }
+    if (([string]$c.HeaderText).Length -gt 2MB) { $problems.Add('Target.HeaderText: more than 2 MB of text - paste the headers only, not the whole message.') }
+    if (-not $File -and [string]$c.TestType -eq 'MessageHeaders' -and -not ([string]$c.HeaderText).Trim() -and -not [string]$c.HeaderFile) { $problems.Add('The MessageHeaders test needs the headers of a message: a file (Target.HeaderFile, -HeaderFile, .eml or .txt) or the text (Target.HeaderText, -HeaderText).') }
+    $dnsName = '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\.?$'
+    foreach ($s in @($c.DnsServer | Where-Object { $_ })) {
+        $ip = $null
+        if (-not [Net.IPAddress]::TryParse([string]$s, [ref]$ip) -and [string]$s -notmatch $dnsName) { $problems.Add("Test.DnsServer: '$s' is not an IP address nor a host name (leave it empty for the DNS servers of Windows).") }
+    }
+    if ([string]$c.DnsProbeName -notmatch $dnsName) { $problems.Add("Test.DnsProbeName must be a DNS name that always answers (default microsoft.com): '$($c.DnsProbeName)'.") }
     if ([string]$c.Cloud -notin @($script:Clouds.Keys)) { $problems.Add("Target.Cloud must be one of: $(@($script:Clouds.Keys) -join ', ').") }
     if ([string]$c.Context -notin 'User', 'Application') { $problems.Add("Identity.Context must be 'User' or 'Application'.") }
     if ([string]$c.ClientId -notmatch $guid -and [string]$c.ClientId -notin @($script:KnownClients.Keys)) { $problems.Add("Identity.ClientId must be $(@($script:KnownClients.Keys) -join ', ') or an application ID (GUID): '$($c.ClientId)'.") }
@@ -283,6 +305,7 @@ function Import-GctConfiguration {
     $settings.ReportFormats = @($settings.ReportFormats)
     $settings.OutputPath = Resolve-GctPath -Path ([string]$settings.OutputPath) -Root $Root
     $settings.LogPath = Resolve-GctPath -Path ([string]$settings.LogPath) -Root $Root
+    $settings.HeaderFile = Resolve-GctPath -Path ([string]$settings.HeaderFile) -Root $Root
     $check = Test-GctConfiguration -Configuration $settings -File
     foreach ($p in $check.Problems) { $problems.Add($p) }
     if ($problems.Count) { throw ("Configuration $Path`n - " + ($problems -join "`n - ")) }
@@ -290,10 +313,10 @@ function Import-GctConfiguration {
 }
 
 # SIG # Begin signature block
-# MIImKwYJKoZIhvcNAQcCoIImHDCCJhgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA2qOzAIdoitzNQ
-# 8rEfKZK63O/B0uTDwIuyoNs5L/AiKqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDATnkuk5tZAkLO
+# 0Z5OsLVNWM5YqRQXxazfs6fFOXHl9aCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -365,28 +388,28 @@ function Import-GctConfiguration {
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEjCCGA4CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCBXKr8/QRoS
-# pjBNrD6cxxYLLL0PdMoe+rPRJe0RCLuHuDANBgkqhkiG9w0BAQEFAASCAgB4lRSP
-# sl8t6Vv7BZ5KscLkoFekvEbZaDIBb4ZcfHq26MAQod0dLiCg2gD3fWl9Xzo9fVlK
-# rSSI5/XDDXaG8fileED6ntTw5oYktiHK34HKt+rGqEsc782wB3/6R0YPjSJviJ0f
-# qbFoYRIGBXnoZ+hgMWxgFanACE9mlfETT9Og7dsa/00di1mf64Uq0WiyJ9B7APac
-# 6rCl9gtgNDfSy1a6qbDtJNOIm4npFZU014mpdal0mhjdkbvFsCNbn4OmIo2TbIIz
-# Eh0xSi3Rvc1vnaxpS3XF0aGr5QEkHI4G+iiwHI4Twf44QzdZv8gfKZ5BhZ5U/0cE
-# z7QcZPNzAlzB7X0dnBOJdZMbLY/7eONePGL/aperVsnMr7llWalmZZYaTiaLzLQv
-# LEsetfaZ5WaCjEVPYdtAgRxpQYj5tgEmG3dei1np5Zvj2zRqhh9beVy41DhHxY/F
-# +wXNJ28qNOMBiZ6ikYwOubUn1cG4IRYeKyhdcCvs0Odd3Jsatd+gFYH46Sum6nnr
-# yVqD4B1kpAV0lZ4b9BI+16RVk0k4AcXvujHMow5EwUApc9+Y2YU1T8qNjzm2jxkT
-# GhKhTo3d8SRdxO+3hl5IwWS+oArY9I4DT4BmtMrvAHkfHeFzOHqfpU4pMSP41VyM
-# 18BbgO+zUCd6diEM1havzVWP0XISyM3ewVMJS6GCFM8wghTLBgorBgEEAYI3AwMB
-# MYIUuzCCFLcGCSqGSIb3DQEHAqCCFKgwghSkAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCA5xjhJgz8Y
+# NJZud6emObMZq7uiSnyfckaFCZSj1eAGMTANBgkqhkiG9w0BAQEFAASCAgCacPy2
+# x+y8nXasFzc+BYoFKqGsj8gUQ46N/ZaPvtG3ps2IqIW48sMRIRvff2Z2MGDA0Xsm
+# Se/zENnu8csDxA2xFmCrlKWRagmfzehDXDsnalPzpOhYWpdXcIrn7feSNyHlrKQm
+# 0jx9jOJLByggxs88eeVTkl8UcP/+w5g0eE9Mhtv/WCVZ8C+TH8pIBNl8PNuNiCFE
+# ruTD2q0UP+n997vYO0PrGmN4Op3EOy5dhXMXj8ZuuN9kPh3iidShdzWploBWResJ
+# P8cC4auGDAShOaWrvWi6PkUIgiWb6LpAbMkI6A3lE+JcjYgotJDthm8Moz050DOA
+# W4lliXobu7FCRog4UkkmclUWoyse4gqp3SNurmMyEMyqjuXcLsR0lDNKbgfhjBeq
+# L1lD2d62szWT0WI6T/GWwEI0l4D1bQ346UCRUFjZdxh6kdF/paeHaF2Wwa/8624J
+# 2gO4W8pw3IN+IkpOquDoKIZTrZa528wSabDLTgyB0aIQNFTNhXliVikUUsNdJcwh
+# xS91O2qC7C3SgQxS28QCTVrkLgg+K7FgS9gDCUCnGbJVticDT8BHpvFeA6IHkx2k
+# OJzPE+8XLrwQgZS1uJTNngDMawloRAxw/swygPbNbWSKeVcNy9T43/a1urfbHmxd
+# E819Y4pVTJoPCJg8KsCVpAPdHMEpiuZdUjXbgKGCFM4wghTKBgorBgEEAYI3AwMB
+# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIEs2j/klxhD/0UW2V4oENexTQjeg61HF3F2D1dDhb5OBAghrgl95kFA6
-# vRgPMjAyNjExMTAxMDIzMTNaMAMCAQECEEli9amLMWn5qBCeooSqyg6gghGnMIIE
+# BAIBBQAEIOKkXkWqsHr+VnzbqFGdmHXXw5ZdbnaoUbXqJv7LxC83AghpyygLmdJB
+# uhgPMjAyNjExMTAxODI1NDRaMAMCAQECEG/IKai8OK18fUXwUdZCwLSgghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -481,17 +504,17 @@ function Import-GctConfiguration {
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlcwggJTAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjMxM1owKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIIJ7
-# w/O4Xfm+o7GDMkA8j7ibrYunhfz5Nbe9+xjuSR6tMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjU0NFowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIBXg
+# W76mQwaEqLQPHMQmXamqsrPxSICLrZUsI3R051DXMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIESDBGAiEAtvnraoq8YWGUejDfKRAlRRPTCydPPorUZNQSLz5ngJ0CIQDK
-# rn6/gfHpMmFyn7nDPjRupIT1+sLen/Iu5MZ6c1hVFA==
+# zj0EAwIERzBFAiBwyxrgav0iwpKo1obO8Ahh0vIyQsoeg7WKWpeYsCPdlQIhAKiV
+# Sxh8zhnksWUiaDaCTLs+ri6ezX55WCcbRY2JzwHo
 # SIG # End signature block

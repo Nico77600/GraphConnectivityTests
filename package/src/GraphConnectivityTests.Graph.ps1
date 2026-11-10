@@ -16,7 +16,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 $script:GctMaxWaitSeconds = 120
@@ -166,6 +166,7 @@ function Get-GctAvailabilityHint {
     elseif ($m -match '\(403\)|Forbidden') { $inner = 'the remote endpoint answered HTTP 403: a reverse proxy, a firewall or an EWS policy (Get-OrganizationConfig EwsApplicationAccessPolicy, Get-CASMailbox EwsEnabled) blocks the request.' }
     elseif ($m -match '\(404\)|Not Found') { $inner = 'the remote URL does not exist (HTTP 404): TargetSharingEpr / DiscoveryEndpoint / TargetAutodiscoverEpr point to a wrong address.' }
     elseif ($m -match '\(503\)|\(502\)|\(504\)|Service Unavailable|Bad Gateway') { $inner = 'the remote Exchange or its load balancer is not available (HTTP 5xx).' }
+    elseif ($m -match 'could not be processed in time') { $inner = 'Exchange Online sent the request but got no answer in time: the endpoint can be reachable yet slow to answer (on-premises Exchange validating the token or calling Entra ID and Exchange Online through an outbound proxy), or the IntraOrganizationConnector / organization relationship points to another URL (TargetSharingEpr, DiscoveryEndpoint, Hybrid Agent). Run the test again; on-premises, look in the EWS and HttpProxy logs for the request from Exchange Online.' }
     elseif ($m -match 'Unable to connect|actively refused|timed out|timeout|could not be resolved|remote name|No such host|connection attempt failed') { $inner = 'Exchange Online could not reach the remote endpoint from the Internet: public DNS name, firewall and reverse proxy must let the Microsoft 365 IP addresses in on TCP 443 (/EWS and /Autodiscover in pass-through).' }
     elseif ($m -match 'trust relationship|SSL|TLS|certificate|secure channel') { $inner = 'the TLS connection to the remote endpoint failed: certificate of a public authority, complete chain, name of the URL, TLS 1.2.' }
     elseif ($m -match 'delegation token|Federation Gateway|federated') { $inner = 'the federation token (DAuth) could not be obtained: federation trust and federated organization identifier of both organisations (Get-FederatedOrganizationIdentifier, Test-FederationTrust).' }
@@ -262,10 +263,10 @@ function ConvertFrom-GctSchedule {
 #endregion
 
 # SIG # Begin signature block
-# MIImKQYJKoZIhvcNAQcCoIImGjCCJhYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBwevQQH/O5RIpQ
-# U76YxLyLaemGYUZ/VX7+FpEjhReeSKCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDl2CRakhr2A0Hf
+# w1x4GWerNYNG/bVjYQJ28bSG7mwBDqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -337,28 +338,28 @@ function ConvertFrom-GctSchedule {
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEDCCGAwCAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCDBVdehgpT/
-# Y9V0Xq06qkHSq+c5DaiZM31aDTGeLS0hyTANBgkqhkiG9w0BAQEFAASCAgAA1gII
-# Sxtp+tYOMwvMJ3XjFFxhYT25qUYjUVBhRmbcwhK2ufxOShC9zU+OjDPe+SihYuta
-# 4jEpdClYepR/43wlXfU+UKZrr3o6VVJ98t0XVRO1r/so2KT0rfj3D6kf9EgFW2Xr
-# 9MeFHJVP8edEWWwwFAshaPjK8LXbeGh1lB6zKCw+ew/2XdL1rWXZVmHqHp6997TA
-# pUFwJNUfE5EaswgJmLf5KWC4mrvUroDsAdhj85hE/2t16YTAjFADHawQOygZJc6p
-# FAXG1/NWGelMK0qMl/tt8Y5hTUjwO+c1mN6L5ZRuXdlC/cTOQ77lT1tI7S5nRCap
-# 46rZY5kqtck8T5XVW4HC7U7/IIPYP2Xl+IjkagxVPvSEASQEz8lhHYBO/j6mbBWk
-# un8QpFbEqUdpnXXirklVIfJKIMj9zw+cPCE3PUr17GqmnU/WRsBtmSFpQKWQBBkv
-# IkdLWVkn7Z71e9Bi78xoQ/4lLVm1X2paGJcqlIMXF3iTSBPAup3wJtS4sGc84sJx
-# tcCoyW9WDkac9jYpmErGhsR2IvZFvo11VSm3MLQfEMehOrWSnpbyx29b0UV/FFII
-# V56IdTzSvNGooO59Bajg8DPuREV+WR0TyFONp45AMC6z4Ak46ZC5ppA1M7vA4xQk
-# +Rt1OHqe+ObsAX/RGifmcgJg+BkTt8sQ8Ehix6GCFM0wghTJBgorBgEEAYI3AwMB
-# MYIUuTCCFLUGCSqGSIb3DQEHAqCCFKYwghSiAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCDSLA3o8Zth
+# 9WFNk7GlXN52MpAZ2ULxlswoEWJqWh+NqDANBgkqhkiG9w0BAQEFAASCAgCVTf7W
+# yu6+tgngt4uH2HsP9Q+e9JdQCnOpenINVjuc4ksi2NpH5+5YZ+NK8NfK+VPPECWh
+# ZVkUqjkY12w76GHPMx0UFMqEHMwx88vdBWraIFykeK9siaZyubQ9qR1kU4+hiKIv
+# 1UWAXAL9FofuqorhobqFJjOfy3Jihor4S7jk6FPDeS/Kde68yDsTXTf+j+A9B438
+# pkcSSVg3wzvYSbEv+0MFu9VLJKvABmSQzhXUWfojTVrd4N1m4CF0BSVbDbOU6maF
+# bi++iWiDWULNCWq2gnwkrgLHYCf5rgUT1hT27OHfUYrtW4wwvxoUKjV6Dz/ghJ6s
+# RKQvXu9ZuCThnmMF8wprxn7F7cKFFMjUa3DqIUaiKA6rMxNG6fCw/XCkrFPaZcuC
+# bLPI926kpoXSTdWfUs3MRIgoKkH3VfIfb8nWfLXEDOX2ve8nL2n6S5LtXkBiTV32
+# hSkD4GZ+t2LIVFLokoauL7vyVzlnP6DIBJftxHwPkcJprxEz78pVT8oijhOAWsRV
+# hnDoJ2b+ycvH9/SwTQ6iPzgKUcwUqf+h9/vjbyX/0Fl5GMQTXl4nALqREdpw1adu
+# TP+1v14btlIisT79tLmbxvtvDhLVNpfh43AeNKK0KJcvrGw7bNOZuzghSqoo/GKz
+# eqa+l0ZBBN0DjXCghOrPCHV9YvBMDewOYeDYmaGCFM4wghTKBgorBgEEAYI3AwMB
+# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIAV0r5Bv3uZl53aYxo3byX7yH/BDHMuGfOa2glwqXT7FAghDmtRfo29H
-# kBgPMjAyNjExMTAxMDIzNDNaMAMCAQECEHUXrX+KdSQtnTv77E0OwbOgghGnMIIE
+# BAIBBQAEIG5GfB4MKUzE7Rr/S9z8lqwivYSSr1bcyJBOfyG4tIQBAghSl7Ib4b3j
+# pxgPMjAyNjExMTAxODI2MTdaMAMCAQECEA+BcZTY3EDn2YI5jWo1052gghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -453,17 +454,17 @@ function ConvertFrom-GctSchedule {
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlUwggJRAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjM0M1owKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIMPY
-# xzkOtKppk2jyXOVTfuM5P9ILUwXRJ8r3l6a/5bn0MIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjYxN1owKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIC6r
+# keXixPM1lt+uBtyWEMa61UfOQbtEgPtCVQEcp/8BMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERjBEAiBpZ2P8quQcSzuzxUm/NVpUyV34OIMgsdZVnE717dupSAIgYfNz
-# /dEW4FNh02o5L6u3gPq8YVj+oELTrTg1MSAahrs=
+# zj0EAwIERzBFAiAA9F9+ibVcOCWVaBnCllgdeSZCBBwaoheppIDJKfoKaQIhAKIq
+# uD4d4ZkhORDTtuoiAseu/Fbf62acuspzQOOn3Dim
 # SIG # End signature block

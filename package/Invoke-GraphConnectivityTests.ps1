@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Graph Connectivity Tests - Microsoft Graph connectivity tests in the user context: free/busy, mailbox services, provisioning, DNS.
+    Graph Connectivity Tests - Microsoft Graph connectivity tests in the user context: free/busy, mailbox services, provisioning, DNS, message headers.
 
 .DESCRIPTION
     Runs one test and tells exactly which step works and which one does not, with the request sent and the
@@ -17,7 +17,11 @@
       Provisioning     does each address have a mailbox, where, of which type, with which license
       DomainDns        MX, SPF, Autodiscover, DKIM, DMARC, MTA-STS, TLS-RPT of a domain, and the records
                        Microsoft 365 expects for it
-      All              every test, one sign-in
+      MessageHeaders   the headers of a message (an .eml or .txt file, or text): the chronology from the sender to
+                       the mailbox with the wait at each hop, SPF, DKIM, DMARC, the spam verdict, the hybrid
+                       attribution and gateways, each finding with what to do; then the DNS of today, so that a
+                       finding already handled since is marked fixed. Nothing signs in.
+      All              every test, one sign-in (not MessageHeaders)
 
     No application to register: the source user signs in with Microsoft Office, a public client of Microsoft
     pre-authorized for Microsoft Graph in every tenant (sign-in window or device code, MFA and Conditional
@@ -29,7 +33,8 @@
     are never written anywhere.
 
 .PARAMETER TestType
-    FreeBusy, MailboxServices, Provisioning, DomainDns or All. Default: Test.DefaultType.
+    FreeBusy, MailboxServices, Provisioning, DomainDns, MessageHeaders or All. Default: Test.DefaultType.
+    Giving -HeaderFile or -HeaderText alone selects MessageHeaders.
 .PARAMETER SourceMailbox
     The mailbox that signs in and asks for the free/busy (Target.SourceMailbox).
 .PARAMETER TargetMailbox
@@ -40,6 +45,16 @@
     Skips the checks of the on-premises endpoint (Target.SkipOnPremisesChecks).
 .PARAMETER Domain
     DomainDns: the domain to check (default: the domain of the source).
+.PARAMETER HeaderFile
+    MessageHeaders: an .eml file, or a .txt file with the headers of the message (Target.HeaderFile). Only the header
+    block is read; the body and the attachments are not.
+.PARAMETER HeaderText
+    MessageHeaders: the headers of the message as text (Target.HeaderText), for example (Get-Clipboard -Raw).
+.PARAMETER SkipDnsCrossCheck
+    MessageHeaders: does not compare the header with the DNS of today (Test.SkipDnsCrossCheck): no DNS query at all.
+.PARAMETER DnsServer
+    The DNS servers asked (IP addresses or names, Test.DnsServer) instead of those of Windows - DomainDns and the
+    DNS of today of MessageHeaders. When no DNS server answers, MessageHeaders reads the header offline.
 .PARAMETER Cloud
     Global, USGov, USGovDoD or China (Target.Cloud).
 .PARAMETER Context
@@ -100,6 +115,15 @@
     The DNS records of contoso.com, then the records Microsoft 365 expects for it.
 
 .EXAMPLE
+    .\Invoke-GraphConnectivityTests.ps1 -HeaderFile .\message.eml
+    The route of the message, its authentication and anti-spam verdict, then the DNS of today (SPF for the sending IP,
+    DMARC, DKIM keys, MX). Nothing signs in.
+
+.EXAMPLE
+    .\Invoke-GraphConnectivityTests.ps1 -HeaderText (Get-Clipboard -Raw) -SkipDnsCrossCheck
+    The headers copied from Outlook (File > Properties > Internet headers), read without any DNS query.
+
+.EXAMPLE
     .\Invoke-GraphConnectivityTests.ps1 -SourceMailbox room-checker@contoso.com -TargetMailbox room1@contoso.com -Context Application -ClientId 11111111-2222-3333-4444-555555555555 -CertificateThumbprint 0123456789ABCDEF0123456789ABCDEF01234567 -TenantId contoso.com
     The same free/busy test as an application (Calendars.Read), for a scheduled task.
 
@@ -108,19 +132,23 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
     Exit codes : 0 = Passed, 1 = Failed, 2 = finished with warnings or blocked.
     Documentation : docs\GraphConnectivityTests-UserGuide.html, docs\GraphConnectivityTests-Guide.html
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [ValidateSet('FreeBusy', 'MailboxServices', 'Provisioning', 'DomainDns', 'All')][string]$TestType,
+    [ValidateSet('FreeBusy', 'MailboxServices', 'Provisioning', 'DomainDns', 'MessageHeaders', 'All')][string]$TestType,
     [string]$SourceMailbox,
     [string[]]$TargetMailbox,
     [string]$OnPremisesHost,
     [switch]$SkipOnPremisesChecks,
     [string]$Domain,
+    [string]$HeaderFile,
+    [string]$HeaderText,
+    [switch]$SkipDnsCrossCheck,
+    [string[]]$DnsServer,
     [ValidateSet('Global', 'USGov', 'USGovDoD', 'China')][string]$Cloud,
     [ValidateSet('User', 'Application')][string]$Context,
     [string]$ClientId,
@@ -157,7 +185,11 @@ try {
         if ($PSBoundParameters.ContainsKey($name)) { $settings[$name] = [string]$PSBoundParameters[$name] }
     }
     if ($PSBoundParameters.ContainsKey('TargetMailbox')) { $settings.TargetMailboxes = @($TargetMailbox | ForEach-Object { $_ -split '[,;\s]+' } | Where-Object { $_ }) }
-    foreach ($switch in 'SkipOnPremisesChecks', 'AllowWrite', 'AdminChecks') { if ($PSBoundParameters.ContainsKey($switch)) { $settings[$switch] = [bool]$PSBoundParameters[$switch] } }
+    if ($PSBoundParameters.ContainsKey('HeaderFile')) { $settings.HeaderFile = [IO.Path]::GetFullPath($HeaderFile, (Get-Location).Path); $settings.HeaderText = '' }
+    if ($PSBoundParameters.ContainsKey('HeaderText')) { $settings.HeaderText = $HeaderText; if (-not $PSBoundParameters.ContainsKey('HeaderFile')) { $settings.HeaderFile = '' } }
+    if (($PSBoundParameters.ContainsKey('HeaderFile') -or $PSBoundParameters.ContainsKey('HeaderText')) -and -not $PSBoundParameters.ContainsKey('TestType')) { $settings.TestType = 'MessageHeaders' }
+    foreach ($switch in 'SkipOnPremisesChecks', 'AllowWrite', 'AdminChecks', 'SkipDnsCrossCheck') { if ($PSBoundParameters.ContainsKey($switch)) { $settings[$switch] = [bool]$PSBoundParameters[$switch] } }
+    if ($PSBoundParameters.ContainsKey('DnsServer')) { $settings.DnsServer = @($DnsServer | ForEach-Object { $_ -split '[,;\s]+' } | Where-Object { $_ }) }
     if ($PSBoundParameters.ContainsKey('FreeBusyDays')) { $settings.FreeBusyDays = $FreeBusyDays }
     if ($OnPremisesCredential -and -not $PSBoundParameters.ContainsKey('OnPremisesAuthentication')) { $settings.OnPremisesAuthentication = 'Credential' }
     if ($OutputPath) { $settings.OutputPath = [IO.Path]::GetFullPath($OutputPath, (Get-Location).Path) }
@@ -195,10 +227,10 @@ finally {
 exit $exitCode
 
 # SIG # Begin signature block
-# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKQYJKoZIhvcNAQcCoIImGjCCJhYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDsDIVAlNuzMrQY
-# R97k/gn4EmrV0yN/m7PqRlN8w77cgaCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDwPhD/lqg3w7JP
+# zQUHpftb499+1983HaokUByVz46SkaCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -270,28 +302,28 @@ exit $exitCode
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYEDCCGAwCAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCBT/YMsTDqG
-# /TaazH6X3C7RS59fnoa+B0OP26hvP7cTuDANBgkqhkiG9w0BAQEFAASCAgBZNqzV
-# QBCCTc1g55+q2mZMsAPxN/kK9gQ8hdWkqfEF/2T9bps0IYIoucmftXXvHIK0jd37
-# kU9oaghtUE9AaIKJyGJL+iYhyKkQcLLGWq1f56JRwdICwkXDaIe3t5mD6w+FYpaL
-# tuG7IIL92mmgBhfhi59cdxF9HT/BBCTxCHgm0SDJNkUw02hNUkWz24pSo6CYVJoh
-# 2Hht81j/sd5SPyPDi1ckAEXz0S7y49gAdamoDZ5S5cp7evli0Zhi2snUZV4eH0oI
-# 4p0ouW3uD7WrhqGBNHh5UkYahDb57w+0ule6+wX9ps8KhcioVspMNEIbhMu8bepi
-# mPnC+JhteUmAfNc4R0rOL/jPzwa+Lw1mTK+p8WrXTrUfdAfTjInFvXY4uZhNJJk2
-# fc8VxSRwJMydH3eSx26WI4bDRsJKTBqkIhDdXnY6G15lV2NIZT5cG9hMDVVci3bM
-# deWXAUK+AxpK4Ay0HMpPZSZvJASFxxPnpA7eqAef2mFb1WUnzzmpm42gdWwLqtnB
-# HVNK/7M+q9hGQUJbE6JqV4himZcBywiGLX5usvvHVQFAcNOl2U9V+RtU9Hvt6c2l
-# 1YAUdKaiDTUSDYBxXRVN9scf1LtCmiBCqfi6JuE4mQhNLL09MrEmaJVSHlnHa2FI
-# +i09Qb+F5wmSVcq2AI+8qj9bbbDm08+DJ7tubKGCFM4wghTKBgorBgEEAYI3AwMB
-# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCDSBSpMRKVZ
+# PZL2kVBjpeQvTyiC4TQF8uJjf38AX2+SszANBgkqhkiG9w0BAQEFAASCAgAhY6OU
+# l+vd31jLu7G3N+jx3XdHviVMhw5ZhpJuVbOUhEuahYYmTS/tWBO0RhSyGO/TwF7s
+# iiowuuibSFbgO3wEVF6MH7id+EaLf9Jtedh41cGbaAtbE883drTJNY15U9l2E/7V
+# NMd5Ig3iYZuoDq7tJFl1GOXsRFPdQ4BDEPTyY1DzpLnI++tYFRIyLtU5ZBlpH8Sy
+# M2LfZYtQc1qxMrdp19ihUpy7+Mjz+QZ44COER87zIN4qaCgGxMyqTfpYTZ7gV0A2
+# tF/ZC0r1SBuHLFbGVNYMb/CzbWQuBwToO0v560lA7ewx2n59nSPMKz3dQAeucsFH
+# n+whI+29yDGHHJ9dC7axhYJIKQdCUUXMdA2Z+UfJ6eByvOg14Go/yFKkn8xiWIzd
+# mSI6vgE2O4BaTTaynbWgYDOsi7Yr163fZhHr5Z0qNFkmC5q7bkqoHwfVNW6mJEbN
+# QU4RrnBvcyYOotUCcA2pdkvNoNMR6kglponHj4Yl3KURDaOAnntyoC2cFxJW3ZZd
+# NmlIwdzfb/L+Sia0zQabqBJI93zAI+76iErMm/auySFU4mYrEUfU1xrUM2I0BRXN
+# YmTaKpiURey+mWF9Dx0BVRSD5wF3HG1PCV6TxP6SANYaUaJXR3RN6LJxOuDq/ms3
+# oHgivlrZ7HHA/y1oWylmg5za4znKIFjl532NM6GCFM0wghTJBgorBgEEAYI3AwMB
+# MYIUuTCCFLUGCSqGSIb3DQEHAqCCFKYwghSiAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIPfDzSjFvT5CeV31ye+9aV5OXon3OIOHZiAHp3aVrNTqAghoKSwtM2+3
-# UxgPMjAyNjExMTAxMDIzMDFaMAMCAQECEDNcpLbgCHxPsKmVPcCOMlSgghGnMIIE
+# BAIBBQAEIOloPfh7HalibJuB4T1UDcLZrG45bKFIObl9pu85Zg7SAggSDzrO9lu+
+# /xgPMjAyNjExMTAxODI1MzdaMAMCAQECEHGQxQwi5thx3xJfTdBMYc6gghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -386,17 +418,17 @@ exit $exitCode
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlUwggJRAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjMwMVowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIJ+l
-# 3+UOCcd6QG4rOcXwLlJL8jx3ivULPMRPK2h7oehjMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjUzN1owKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIFpA
+# NeFCuixWeVWZ7qZUHuKeTADM2CJBZE3FC0W/LbB5MIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERzBFAiBZyci3VO8qcVAwUgjDTnlKLUuJkBxnmeIiIZJRawtgEQIhAPVV
-# PTwlYy315vSIrOO/BekdCGkxJZ+utZebDuD/c900
+# zj0EAwIERjBEAiBH5ZBGJQVMCpibOmzqc5vLydQ23U12kjXbkNojgjLVugIgOcBh
+# tTC7BeT1B4+QYwkPGLP2vEd5RNq3MtiMwwgKyYE=
 # SIG # End signature block

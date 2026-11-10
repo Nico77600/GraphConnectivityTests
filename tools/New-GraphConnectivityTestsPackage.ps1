@@ -5,7 +5,7 @@
 .DESCRIPTION
     The package contains only what Invoke-GraphConnectivityTests.ps1 needs at run time, plus the HTML guides:
         package\Invoke-GraphConnectivityTests.ps1, package\GraphConnectivityTests.psd1, package\GraphConnectivityTests.psm1,
-        package\src\, package\config\, package\templates\, package\docs\GraphConnectivityTests-UserGuide.html,
+        package\src\, package\config\, package\templates\, package\data\header-codes.json, package\docs\GraphConnectivityTests-UserGuide.html,
         package\docs\GraphConnectivityTests-Guide.html, package\README.md, CHANGELOG.md, package\LICENSE, package\THIRD-PARTY-NOTICES.md
     The HTML guides (user guide, developer guide) are rebuilt first from their Markdown sources (tools\Build-Documentation.ps1):
     they are self-contained (images inline), so the Markdown sources and the images are not copied.
@@ -27,11 +27,11 @@
 
 .EXAMPLE
     .\tools\New-GraphConnectivityTestsPackage.ps1
-    Creates artifacts\GraphConnectivityTests-1.0.0 and artifacts\GraphConnectivityTests-1.0.0.zip.
+    Creates artifacts\GraphConnectivityTests-1.1.0 and artifacts\GraphConnectivityTests-1.1.0.zip.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
     Part of : Graph Connectivity Tests (repository tool, not in the package)
 #>
 #Requires -Version 7.4
@@ -74,7 +74,7 @@ if (-not $NoZip -and (Test-Path -LiteralPath $zip)) {
 # ---- Files needed at run time -------------------------------------------------------------------
 $files = [Collections.Generic.List[string]]::new()
 foreach ($f in 'Invoke-GraphConnectivityTests.ps1', 'GraphConnectivityTests.psd1', 'GraphConnectivityTests.psm1', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md',
-    'config\GraphConnectivityTests.config.psd1', 'templates\Report.template.html', 'docs\GraphConnectivityTests-UserGuide.html', 'docs\GraphConnectivityTests-Guide.html') { $files.Add($f) }
+    'config\GraphConnectivityTests.config.psd1', 'templates\Report.template.html', 'data\header-codes.json', 'docs\GraphConnectivityTests-UserGuide.html', 'docs\GraphConnectivityTests-Guide.html') { $files.Add($f) }
 Get-ChildItem -LiteralPath (Join-Path $packageRoot 'src') -Filter '*.ps1' -File | ForEach-Object { $files.Add("src\$($_.Name)") }
 foreach ($f in $files) {
     $source = Join-Path $packageRoot $f
@@ -90,7 +90,9 @@ $problems = [Collections.Generic.List[string]]::new()
 foreach ($name in 'reports', 'logs', 'tests', 'artifacts', 'tools', 'docs\images') {
     if (Test-Path -LiteralPath (Join-Path $Destination $name)) { $problems.Add("Folder $name\ must not be in the package.") }
 }
+# The one JSON file of the package: the code tables of the message header analysis.
 Get-ChildItem -LiteralPath $Destination -Recurse -File -Include '*.log', '*.csv', '*.json', '*.png', '*.md.bak', '*.Tests.ps1', '*Simulator*' |
+    Where-Object { $_.FullName -ne (Join-Path $Destination 'data\header-codes.json') } |
     ForEach-Object { $problems.Add("Not a run-time file: $($_.Name)") }
 $manifest = [IO.File]::ReadAllText((Join-Path $packageRoot 'GraphConnectivityTests.psm1'))
 $parts = @([regex]::Match($manifest, "foreach \(\`$part in ([^)]+)\)").Groups[1].Value -split ',' | ForEach-Object { $_.Trim(" '") } | Where-Object { $_ })

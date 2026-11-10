@@ -1,0 +1,40 @@
+Received: from AM4PEPF00027A61.eurprd04.prod.outlook.com
+ (2603:10a6:20b:462:cafe::5b) by DB9PR04MB8100.eurprd04.prod.outlook.com
+ (2603:10a6:10:2b1::7) with Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8200.12; Tue, 10 Nov
+ 2026 10:12:41 +0000
+Authentication-Results: spf=softfail (sender IP is 203.0.113.10)
+ smtp.mailfrom=contoso.com; dkim=none (message not signed)
+ header.d=none;dmarc=fail action=none header.from=contoso.com;compauth=fail
+ reason=001
+Received-SPF: SoftFail (protection.outlook.com: domain of transitioning
+ contoso.com discourages use of 203.0.113.10 as permitted sender)
+Received: from mail.contoso.com (203.0.113.10) by
+ AM4PEPF00027A61.mail.protection.outlook.com (10.167.16.75) with Microsoft SMTP
+ Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id
+ 15.20.8200.12 via Frontend Transport; Tue, 10 Nov 2026 10:12:40 +0000
+Received: from EXMBX1.corp.contoso.com (10.0.0.11) by EXMBX2.corp.contoso.com
+ (10.0.0.12) with Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.2.1544.4; Tue, 10 Nov
+ 2026 11:12:38 +0100
+Received: from EXMBX1.corp.contoso.com ([fe80::a1b2:c3d4:e5f6:7a8b]) by
+ EXMBX1.corp.contoso.com ([fe80::a1b2:c3d4:e5f6:7a8b%13]) with mapi id
+ 15.02.1544.004; Tue, 10 Nov 2026 11:12:37 +0100
+From: Eric Moreau <eric.moreau@contoso.com>
+To: Alice Durand <alice@contoso.com>
+Subject: Weekly report (connector not recognised)
+Date: Tue, 10 Nov 2026 10:12:36 +0000
+Message-ID: <1b2c3d4e5f6a4b7c9d0e1f2a3b4c5d6e@contoso.com>
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+X-MS-Exchange-Organization-AuthAs: Anonymous
+X-MS-Exchange-Organization-Network-Message-Id: 7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f
+X-MS-Exchange-Organization-MessageDirectionality: Incoming
+X-MS-Exchange-Organization-SCL: 5
+X-Forefront-Antispam-Report: CIP:203.0.113.10;CTRY:FR;LANG:en;SCL:5;SRV:;IPV:NLI;SFV:SPM;H:mail.contoso.com;PTR:mail.contoso.com;CAT:SPOOF;SFS:(13230040);DIR:INB;
+X-Microsoft-Antispam: BCL:0;
+X-Microsoft-Antispam-Mailbox-Delivery: ucf:0;jmr:0;auth:0;dest:J;OFR:SpamFilterAuthJ;ENG:(910001)(944506478);
+X-MS-Exchange-CrossTenant-Id: 7d0c3e8a-5f1b-4a2c-9e6d-1b2c3d4e5f60
+X-MS-Exchange-CrossTenant-AuthAs: Anonymous
+X-MS-Exchange-CrossTenant-AuthSource: AM4PEPF00027A61.eurprd04.prod.outlook.com
+X-MS-Exchange-CrossTenant-FromEntityHeader: Internet

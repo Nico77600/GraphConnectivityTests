@@ -33,7 +33,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 $script:SimContoso = '7d4e2a91-3c5b-4f6e-8a1d-2b9c0e5f4a37'
@@ -289,7 +289,8 @@ function Get-SimOnPremResponse([hashtable]$State, [Net.Http.HttpRequestMessage]$
     $auth = $Request.Headers.Authorization
     $headers = @{ 'X-FEServer' = 'EXCH01'; 'request-id' = [guid]::NewGuid().ToString(); 'X-Powered-By' = 'ASP.NET'; 'Server' = 'Microsoft-IIS/10.0' }
     $bearer = "Bearer client_id=""00000002-0000-0ff1-ce00-000000000000"", trusted_issuers=""00000001-0000-0000-c000-000000000000@$($State.OnPremTrustedTenant)"", token_types=""app_asserted_user_v1 service_asserted_app_v1"", authorization_uri=""https://login.windows.net/common/oauth2/authorize"""
-    $schemes = @(if ($State.OnPremBearer) { $bearer }) + @('Negotiate', 'NTLM') + @(if ($State.OnPremBasic) { 'Basic realm="mail.contoso.com"' })
+    # As Exchange: the Bearer challenge only for a request that announces Bearer (empty Authorization: Bearer).
+    $schemes = @(if ($State.OnPremBearer -and $auth -and $auth.Scheme -eq 'Bearer') { $bearer }) + @('Negotiate', 'NTLM') + @(if ($State.OnPremBasic) { 'Basic realm="mail.contoso.com"' })
     if ($path -notin '/ews/exchange.asmx', '/autodiscover/autodiscover.svc') { return New-SimResponse 404 '<html><head><title>404 - File or directory not found.</title></head><body>Server Error</body></html>' $headers -ContentType 'text/html' }
     if ($State.OnPremProxy) { return New-SimResponse 302 '' @{ Location = 'https://sts.contoso.com/adfs/ls/?wa=wsignin1.0&wtrealm=https%3a%2f%2fmail.contoso.com%2f'; Server = 'BigIP' } }
     $isAvailability = $Body -match 'GetUserAvailabilityRequest'
@@ -303,7 +304,7 @@ function Get-SimOnPremResponse([hashtable]$State, [Net.Http.HttpRequestMessage]$
         if ($scheme -in 'Negotiate', 'NTLM') { $typedUser = $State.OnPremAccounts[$account.ToLowerInvariant()] }
     }
     $windowsSession = -not $auth -and $isAvailability -and $(if ($typed) { [bool]$typedUser } else { $State.WindowsAccepted })
-    if (-not $auth -and -not $windowsSession) { return New-SimResponse 401 '' $headers $schemes }
+    if ((-not $auth -or ($auth.Scheme -eq 'Bearer' -and -not $auth.Parameter)) -and -not $windowsSession) { return New-SimResponse 401 '' $headers $schemes }
     $caller = $null
     if ($auth -and $auth.Scheme -eq 'Basic') {
         $pair = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($auth.Parameter)).Split(':', 2)

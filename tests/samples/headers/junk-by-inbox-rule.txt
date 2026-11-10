@@ -1,0 +1,36 @@
+Received: from AM4PEPF00027A64.eurprd04.prod.outlook.com
+ (2603:10a6:20b:462:cafe::5e) by DB9PR04MB8100.eurprd04.prod.outlook.com
+ (2603:10a6:10:2b1::7) with Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8200.12; Tue, 10 Nov
+ 2026 14:20:31 +0000
+Authentication-Results: spf=pass (sender IP is 198.51.100.26)
+ smtp.mailfrom=fabrikam.com; dkim=pass (signature was verified)
+ header.d=fabrikam.com;dmarc=pass action=none
+ header.from=fabrikam.com;compauth=pass reason=100
+Received: from EUR05-DB8-obe.outbound.protection.outlook.com (198.51.100.26) by
+ AM4PEPF00027A64.mail.protection.outlook.com (10.167.16.78) with Microsoft SMTP
+ Server (version=TLS1_3, cipher=TLS_AES_256_GCM_SHA384) id 15.20.8200.12 via
+ Frontend Transport; Tue, 10 Nov 2026 14:20:30 +0000
+Received: from PA4PR08MB7001.eurprd08.prod.outlook.com
+ ([fe80::2d3e:4f5a:6b7c:8d9e]) by PA4PR08MB7001.eurprd08.prod.outlook.com
+ ([fe80::2d3e:4f5a:6b7c:8d9e%5]) with mapi id 15.20.8200.12; Tue, 10 Nov 2026
+ 14:20:29 +0000
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=fabrikam.com;
+ s=selector2; h=From:Date:Subject:Message-ID:Content-Type:MIME-Version;
+ bh=c2FtcGxl; b=c2FtcGxlIHNpZ25hdHVyZQ==
+From: Dave Martin <dave@fabrikam.com>
+To: Alice Durand <alice@contoso.com>
+Subject: Re: Quote for the new site
+Date: Tue, 10 Nov 2026 14:20:27 +0000
+Message-ID: <PA4PR08MB7001B2C3D4E5F6A7B8C9@PA4PR08MB7001.eurprd08.prod.outlook.com>
+MIME-Version: 1.0
+X-MS-Exchange-Organization-Network-Message-Id: 4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8
+X-MS-Exchange-Organization-AuthAs: Anonymous
+X-MS-Exchange-Organization-MessageDirectionality: Incoming
+X-MS-Exchange-Organization-SCL: 1
+X-Forefront-Antispam-Report: CIP:198.51.100.26;CTRY:IE;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:EUR05-DB8-obe.outbound.protection.outlook.com;PTR:mail-db8eur05on2026.outbound.protection.outlook.com;CAT:NONE;SFS:(13230040);DIR:INB;
+X-Microsoft-Antispam: BCL:0;ARA:13230040;
+X-Microsoft-Antispam-Mailbox-Delivery: ucf:1;jmr:0;auth:0;dest:J;OFR:CustomRules;ENG:(910001)(944506478)(944626604)(4710137)(4999163);
+X-MS-Exchange-CrossTenant-Id: 7d0c3e8a-5f1b-4a2c-9e6d-1b2c3d4e5f60
+X-MS-Exchange-CrossTenant-AuthAs: Anonymous
+X-MS-Exchange-CrossTenant-FromEntityHeader: Internet

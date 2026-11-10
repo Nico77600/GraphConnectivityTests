@@ -3,7 +3,22 @@
 All notable changes are listed here. Versions follow MAJOR.MINOR.PATCH (see the developer guide, appendix C).
 Author: Nicolas Fabert.
 
-## [1.0.0] — 2026-11-09
+## [1.1.0] — 2026-11-10
+
+### Added
+- **MessageHeaders test**: what happened to a message, from its headers — `Target.HeaderFile` · `-HeaderFile` (an `.eml` or `.txt` file, header block only) or `Target.HeaderText` · `-HeaderText`. No sign-in, no Microsoft Graph permission: the header is read on the workstation.
+  - **Route of the message**: the chronology, one check per step — the sender (Date field, mail client, client IP, first host), each *Received* hop (time, wait before it, who held the message: sender side, sending service, third-party gateway, Exchange on-premises with its build, Microsoft 365 entry, Exchange Online), the mailbox (folder, SCL, verdict); clock skew detected, the longest wait marked.
+  - **Findings on their step**, each with what to do: SPF, DKIM, DMARC with the alignment computed again (relaxed and strict), composite authentication with its reason, ARC; the spam verdict (SFV, CAT, SFTY, SCL, IPV, BCL) and the `-Untrusted` verdict of the sending organisation; the folder and its reason (`X-Microsoft-Antispam-Mailbox-Delivery`: inbox rule, Blocked Senders, spam verdict); the hybrid attribution (`FromEntityHeader`, `AuthAs`: *On-premises message not recognised* when the inbound connector does not match); third-party gateways and Enhanced Filtering for Connectors; From, Sender, Reply-To, Return-Path. *Follow the message*: `Get-MessageTraceV2`, `Get-MessageTrackingLog`, the Network Message ID.
+  - **Is it still the case? (DNS of today)**, unless `Test.SkipDnsCrossCheck` · `-SkipDnsCrossCheck`: SPF of the MAIL FROM domain evaluated for the original sending IP (RFC 7208: `ip4`, `ip6`, `a`, `mx`, `include`, `redirect`, `exists`, macros, 10 DNS lookups and 2 void lookups), DMARC of the From domain, the DKIM keys of the signatures, the MX of the recipient domain; each finding marked *still the case*, *fixed since* or *changed since*. When no DNS server answers (offline, closed network), the header is read offline instead: one probe query (`Test.DnsProbeName`, default `microsoft.com`), then the stage is skipped and every finding stays as the header shows it.
+- **DNS server of the run**: `Test.DnsServer` · `-DnsServer` (IP addresses or names, also in the window) asks these DNS servers instead of those of Windows, for `DomainDns` and the DNS of today of `MessageHeaders`.
+  - Console: a compact chronology; window: the headers pasted or a file chosen with *Browse*, the chronology on the timeline with the findings and the raw fields in the diagnostics of each step; report: the *Route* tab and `Route.csv`; `Summary.json`: `Headers`, `HeaderSummary`, `Route`.
+  - The code tables are one file, `data\header-codes.json`, shared with the web page of Graph Connectivity Tests; both are tested on the same anonymised sample headers (`tests\samples\headers`) and give the same results.
+
+### Fixed
+- **OnPremises stage**: the anonymous requests to `/EWS/Exchange.asmx` and `/autodiscover/autodiscover.svc` now carry an empty `Authorization: Bearer` header, as Exchange Online and Outlook send it. Exchange offers its OAuth challenge (`trusted_issuers`, `authorization_uri`) only to such a request: without it, an Exchange server with hybrid modern authentication answered `Negotiate, NTLM` and the test wrongly warned that OAuth was not enabled (and Autodiscover answered HTTP 400).
+- **Free/busy hints**: the error 5027 "Request could not be processed in time" gets its own hint (endpoint reachable but slow to answer, or connector pointing to another URL) instead of the one for an unreachable endpoint.
+
+## [1.0.0] — 2026-11-10
 
 First version. Microsoft Graph connectivity tests in the user context, with Microsoft Graph instead of EWS, with the structure and the standards of Web Services Client for Exchange.
 

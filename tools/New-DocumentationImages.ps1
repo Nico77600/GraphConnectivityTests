@@ -23,6 +23,9 @@
         gct-console.png          the console of the same test (ANSI colours and emoji, as in Windows Terminal)
         gct-gui.png              the window after the test, light theme
         gct-gui-dark.png         the window after the test, dark theme
+        gct-report-route.png     the Route panel of a MessageHeaders report (sample tests\samples\headers\gateway-in-front.txt)
+        gct-gui-headers.png      the window after a MessageHeaders test of the same sample, light theme
+        gct-gui-headers-dark.png the same, dark theme
 
     The HTML pages are captured with Microsoft Edge (headless). The window is opened in a separate STA
     PowerShell (New-GctTestForm -Theme Light|Dark, the hook of Show-GctTestGui for the documentation), on
@@ -41,7 +44,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0  (from Web Services Client for Exchange 1.0.0)
+    Version : 1.1.0  (from Web Services Client for Exchange 1.0.0)
     Part of : Graph Connectivity Tests (repository tool, not in the package)
 #>
 [CmdletBinding()]
@@ -169,6 +172,18 @@ try {
     Save-ReportView 'gct-report-freebusy' 'header.hero, footer { display:none !important; } body { padding-top:8px; }' '' 'freebusy' 1000
     $openTrace = "const x = Array.from(document.querySelectorAll('#panel-trace details.exchange')).find(d => /getSchedule/.test(d.querySelector('summary').textContent) && !/source/.test(d.querySelector('summary').textContent)); if (x) { x.open = true; const all = Array.from(document.querySelectorAll('#panel-trace details.exchange')); const i = all.indexOf(x); all.slice(0, Math.max(0, i - 2)).forEach(d => d.hidden = true); }"
     Save-ReportView 'gct-report-trace' 'header.hero, footer { display:none !important; } body { padding-top:8px; }' $openTrace 'trace' 1150
+
+    # MessageHeaders: a sample header, the DNS of today from the simulated DNS.
+    Write-Host 'Report of a message header analysis (sample, simulated DNS)...'
+    Install-SimNetwork -Module $module -State (New-DocState)
+    $headerSettings = $settings.Clone()
+    $headerSettings.TestType = 'MessageHeaders'
+    $headerSettings.HeaderText = [IO.File]::ReadAllText((Join-Path $root 'tests\samples\headers\gateway-in-front.txt'))
+    $headerResult = Invoke-GctConnectivityTest -Configuration $headerSettings -TestType MessageHeaders -Quiet
+    $headerReport = Export-GctReport -Result $headerResult -OutputPath $settings.OutputPath
+    $reportHtml = [IO.File]::ReadAllText($headerReport.Files.Html).Replace($settings.OutputPath, "$shown\reports").Replace($settings.OutputPath.Replace('\', '\\'), "$shown\reports".Replace('\', '\\'))
+    Assert-Anonymous $reportHtml 'The HTML report of the header analysis'
+    Save-ReportView 'gct-report-route' 'footer { display:none !important; }' '' 'route' 2200
     #endregion
 
     #region Console image ---------------------------------------------------------------------------
@@ -256,7 +271,7 @@ finally {
 #region Window images -----------------------------------------------------------------------------
 # A separate STA PowerShell: WPF needs it, and the window must not inherit the console settings above.
 $windowScript = @'
-param([string]$Root, [string]$Theme, [string]$Png, [string]$Work, [string]$Shown, [string]$Focus = 'Free/busy of carol@*')
+param([string]$Root, [string]$Theme, [string]$Png, [string]$Work, [string]$Shown, [string]$Focus = 'Free/busy of carol@*', [string]$Test = 'FreeBusy', [string]$Sample)
 $ErrorActionPreference = 'Stop'
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo('en-US')
 Import-Module (Join-Path $Root 'package\GraphConnectivityTests.psd1') -Force
@@ -276,7 +291,7 @@ public static class GctDocWin { [StructLayout(LayoutKind.Sequential)] public str
  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out R r, int s); }
 "@
 & $module {
-    param($Theme, $Png, $Work, $Shown, $Focus)
+    param($Theme, $Png, $Work, $Shown, $Focus, $Test, $Sample)
     $reports = Join-Path $Work "gui-$Theme\reports"
     $cfg = Import-GctConfiguration
     $cfg.TestType = 'FreeBusy'
@@ -286,6 +301,7 @@ public static class GctDocWin { [StructLayout(LayoutKind.Sequential)] public str
     $cfg.SignIn = 'Auto'
     $cfg.OutputPath = $reports
     $cfg.LogPath = Join-Path $Work "gui-$Theme\logs"
+    if ($Test -eq 'MessageHeaders') { $cfg.TestType = 'MessageHeaders'; $cfg.HeaderText = [IO.File]::ReadAllText($Sample); $cfg.HeaderFile = '' }
     $f = New-GctTestForm -Configuration $cfg -Theme $Theme
     $form = $f.Form
     $form.WindowStartupLocation = 'Manual'
@@ -336,7 +352,7 @@ public static class GctDocWin { [StructLayout(LayoutKind.Sequential)] public str
     $form.Topmost = $false
     $form.Close()
     "$($r.Ri - $r.L) x $($r.B - $r.T)"
-} $Theme $Png $Work $Shown $Focus
+} $Theme $Png $Work $Shown $Focus $Test $Sample
 '@
 
 if (-not $SkipWindow) {
@@ -344,13 +360,16 @@ if (-not $SkipWindow) {
     $scriptPath = Join-Path $work 'window.ps1'
     [IO.File]::WriteAllText($scriptPath, $windowScript, [Text.UTF8Encoding]::new($true))
     $pwsh = (Get-Process -Id $PID).Path
-    foreach ($shot in @(@{ Theme = 'Light'; Name = 'gct-gui' }, @{ Theme = 'Dark'; Name = 'gct-gui-dark' })) {
+    $sample = Join-Path $root 'tests\samples\headers\gateway-in-front.txt'
+    foreach ($shot in @(@{ Theme = 'Light'; Name = 'gct-gui' }, @{ Theme = 'Dark'; Name = 'gct-gui-dark' },
+            @{ Theme = 'Light'; Name = 'gct-gui-headers'; Test = 'MessageHeaders'; Focus = '4. * Microsoft 365 entry*' }, @{ Theme = 'Dark'; Name = 'gct-gui-headers-dark'; Test = 'MessageHeaders'; Focus = '4. * Microsoft 365 entry*' })) {
+        $extra = if ($shot['Test']) { @('-Test', $shot.Test, '-Focus', "`"$($shot.Focus)`"", '-Sample', "`"$sample`"") } else { @() }
         $png = Join-Path $OutputFolder "$($shot.Name).png"
         if (Test-Path $png) { Remove-Item $png -Force }
         $out = Join-Path $work "window-$($shot.Theme).txt"
         # A window minimised by Windows gives a tiny image (219 x 39): up to three attempts.
         for ($attempt = 1; $attempt -le 3; $attempt++) {
-        $proc = Start-Process -FilePath $pwsh -ArgumentList @('-NoProfile', '-STA', '-File', "`"$scriptPath`"", '-Root', "`"$root`"", '-Theme', $shot.Theme, '-Png', "`"$png`"", '-Work', "`"$work`"", '-Shown', "`"$shown`"") -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+        $proc = Start-Process -FilePath $pwsh -ArgumentList (@('-NoProfile', '-STA', '-File', "`"$scriptPath`"", '-Root', "`"$root`"", '-Theme', $shot.Theme, '-Png', "`"$png`"", '-Work', "`"$work`"", '-Shown', "`"$shown`"") + $extra) -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError "$out.err"
         if (-not $proc.WaitForExit(180000)) { Stop-Process -Id $proc.Id -Force; throw "The window ($($shot.Theme)) did not close in 3 minutes." }
         if (-not (Test-Path $png)) { throw "Window image not written ($($shot.Theme)): $(Get-Content "$out.err" -Raw)" }
         if ((Get-Content $out -Raw).Trim() -match '^(\d+) x' -and [int]$Matches[1] -ge 1000) { break }

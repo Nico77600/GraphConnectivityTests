@@ -8,11 +8,11 @@
 #
 @{
     RootModule        = 'GraphConnectivityTests.psm1'
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.1.0'
     GUID              = '5f7c2a9e-3d41-4b8a-9c6e-2a1f0b7d4e93'
     Author            = 'Nicolas Fabert'
     Copyright         = '(c) 2026 Nicolas Fabert. MIT License.'
-    Description       = 'Graph Connectivity Tests: Microsoft Graph connectivity tests in the user context (no application to register) - can a mailbox see the free/busy of others, in both directions of a hybrid organisation and across organisations, with the cause of each Availability error; plus mailbox services (delta sync, availability, automatic replies), mailbox provisioning and the DNS records of a domain - every request and response traced, CSV, JSON and HTML reports, a console and a window.'
+    Description       = 'Graph Connectivity Tests: Microsoft Graph connectivity tests in the user context (no application to register) - can a mailbox see the free/busy of others, in both directions of a hybrid organisation and across organisations, with the cause of each Availability error; plus mailbox services (delta sync, availability, automatic replies), mailbox provisioning, the DNS records of a domain, and the analysis of message headers (route, authentication, anti-spam, compared with the DNS of today) - every request and response traced, CSV, JSON and HTML reports, a console and a window.'
     PowerShellVersion = '7.4'
 
     FunctionsToExport = @(
@@ -25,17 +25,17 @@
     AliasesToExport   = @()
     PrivateData       = @{
         PSData = @{
-            Tags       = @('Exchange', 'ExchangeOnline', 'MicrosoftGraph', 'FreeBusy', 'Hybrid', 'OAuth', 'EntraID', 'Autodiscover', 'DNS', 'Diagnostic')
+            Tags       = @('Exchange', 'ExchangeOnline', 'MicrosoftGraph', 'FreeBusy', 'Hybrid', 'OAuth', 'EntraID', 'Autodiscover', 'DNS', 'Diagnostic', 'MessageHeaders', 'SPF', 'DKIM', 'DMARC')
             LicenseUri = 'https://opensource.org/licenses/MIT'
         }
     }
 }
 
 # SIG # Begin signature block
-# MIImKwYJKoZIhvcNAQcCoIImHDCCJhgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA7+k/0aEnBJPEw
-# zyN5gUlYkrpINnQ3YavrvZpBQ3B+y6CCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDjkbMKEnrHXu0X
+# v0jWgNfTbtMQPZro/ZBGq0p99dkTHqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -107,28 +107,28 @@
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEjCCGA4CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCDvIWLZAssK
-# ejYd8BxvzmBgIJ6szQ1RhBA09pnPa0FkgjANBgkqhkiG9w0BAQEFAASCAgBF9lOq
-# hiIqSkuCMz2OqjHJU7HY1D/vrnDJnpFZZC8lSrf9JjK8nON1QB8xWzoP38BoDQN1
-# Y8EReQ0/D1VYvYDAsmuoHP2Y6soT4/N0KOdkQzW2hTLUs8I7ToDIcQmKxpULTjEO
-# MRs0/1rgJ4SQAuxAWUHRDpGaZ0Vh9wcpKts2XYs57ZzsMysMI9SMYY+7rBV97Hsn
-# Y/UccrctRr6EyDEo4AkLe5UDtQLEE8/aegk8AXn6o9BFAGPr0unyHS7/I+d/cin+
-# JrBMpmnOGKEYSQxxNC5gjhuDbweDrKosJ8qxbNNSgBqZWYznQboCc5HNEbUn4KeP
-# cEA6YrCMqv2OITVUyfetyR1OWWx/PlwN/aU7cr+lFt4AqnmmMsDpDLM3Hcs3PrZ8
-# 00Q/3LzV+wZ2cky8XApFdXVMpXl9i9ir+D520LUdQ47mcQy2xbYmvcT/CLBYNaND
-# kBy7/RsZrmHyAaf+pc+oQiHOBmGMqaLLsK6a+li0CJSOLoCN+ZWSJuMaWWSBQ5PQ
-# PCjTj6BUC/Ga/A/vV7ABLjABy1/0enDqhqHpUiA/CEGpnsJgk4DZhqD2H655cclu
-# Azt8AwfsHKkEmk3C+lnTaMoDSc9lru2+Sc4glkZHh0daIJsMdUBul18RmsMNHDr+
-# OeT/RnxEFhFOCUvOl1uiG1z9zKAREiFBHoTRYqGCFM8wghTLBgorBgEEAYI3AwMB
-# MYIUuzCCFLcGCSqGSIb3DQEHAqCCFKgwghSkAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCB5neCUYPTf
+# oy3oJAmzRaEMZ7zd4X5vlN2+OoEd16aUaTANBgkqhkiG9w0BAQEFAASCAgCVXEKN
+# 1K8cYSgpx7pQxt7p1+qiPSOT+oN6ET157earG5ztIzNiJWUc/0Ql700FnaCS25Iq
+# P7PbrCyr4KrscZqjTA7LGHObLlcO/LcgD8e29vVyTW6NzOXCzsWTZ4geOf/iIEPA
+# W+6EW+tIpYDYR1iAs7OyoAIlECAe54uzqpYesGiBhYFq1XQpY/e0afQKYyiwhl6r
+# dE8BJfXK0XGLVhRp8llI9Oes4qOOKAJRu/3ZQoq+vfCC6Uskm1sHoZHwgj96YLNS
+# fDTkNWFR26/DRO8U6tkHb4Dlh/C7pMcHDWufnFapSc2IYkyZJIodNS+KZzwiSb5v
+# YmN5KgIbFvq2C+XziQlUEViEi/v3Bb2QuRSSLY1yeDldnrMSc1bfBEtsaPkLNzra
+# xwXiTebGLmWM/aGPbIrF1xZyrr5danWJvNyt2IUtsEBfhDEdLrqI00LnHhdM0Zmy
+# kx/7Tc2XcG+Gh6ytEnc0cxWuGO6prSEwVr+n5VscIu5PrjGEk4PTIi0yzSi3qjgD
+# LfyUZFH1RrIUPRe9b8bb5r0jwXBjpbsGFwTN7Mn8UjrEJ/bJuO4qNiaIs5bY24V4
+# dCbRMS5eELS0xGKJrJgKsomqwN5UtpFlaFNuMhbtfQwyQNLzGkw4Z/YFDt4KoWXP
+# or0houE0slBnEz5YgCKgEI8rSu/4aSef9T21qaGCFM4wghTKBgorBgEEAYI3AwMB
+# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIOysxDbNKNyKofmE8CgvcZ32JvbKgy/t12Y2k0nf6PbYAggQBdjAoL5D
-# 2hgPMjAyNjExMTAxMDIyNTJaMAMCAQECEGmTCk6jIcBIHen7IGWI2WSgghGnMIIE
+# BAIBBQAEILcvRYuzPo+slHNYilm9QNTeTqCD31k/Rmzq+Nf28PSHAgg8rnVZjMBy
+# WhgPMjAyNjExMTAxODI1MDlaMAMCAQECEBHXsna/ZilF5fgR39mvSKWgghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -223,17 +223,17 @@
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlcwggJTAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjI1MlowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIETJ
-# 1rgxND8bxf0AHZrjOzbEQ5K9cU1I6ztjh3T7WLEWMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjUwOVowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIL0L
+# n6A0j4y9DKto28PyVI7aLh03iiiH7su7FwQ97+CGMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIESDBGAiEAhbsJYoCd2BC+U6BBIsfeSO0jvLoumChoffbWDdyyw0UCIQDP
-# HXfa4ygyl60MuvuYTYwa+p7TmNKu8EFOVvYhU8ImIg==
+# zj0EAwIERzBFAiEAvgR84X/Lk1Tq95yAnEmJBA8decusAKmmednyOalbZYsCICuE
+# 9qFTuFr8SUz7m4Apfbq8TFkqXVtNUU8gTFXSzPn5
 # SIG # End signature block

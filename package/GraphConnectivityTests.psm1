@@ -18,6 +18,7 @@
         src\GraphConnectivityTests.ExchangeAdmin.ps1 optional: hybrid and sharing configuration of Exchange Online (administrator)
         src\GraphConnectivityTests.Mailbox.ps1       mailbox services (sync, availability, automatic replies) and provisioning
         src\GraphConnectivityTests.Dns.ps1           DNS records of a domain, and the records Microsoft 365 expects
+        src\GraphConnectivityTests.Headers.ps1       message headers: route, authentication, anti-spam, and the DNS of today
         src\GraphConnectivityTests.Run.ps1           steps and Invoke-GctConnectivityTest
         src\GraphConnectivityTests.Report.ps1        CSV, JSON and HTML report
         src\GraphConnectivityTests.Gui.ps1           WPF window (Fluent theme of Windows 11)
@@ -26,7 +27,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
     History : see CHANGELOG.md
 #>
 #Requires -Version 7.4
@@ -34,7 +35,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 
-$script:ToolVersion = '1.0.0'
+$script:ToolVersion = '1.1.0'
 $script:ToolRoot = $PSScriptRoot
 $script:GctUserAgent = 'GraphConnectivityTests/1.0'
 $script:LogWriter = $null
@@ -43,7 +44,7 @@ $script:Quiet = $false
 # Window hooks, set only while the window runs a test: Sink (progress lines), Pump (keeps the window responsive), Cancel, DeviceCode.
 $script:Ui = $null
 
-foreach ($part in 'Console', 'Config', 'Http', 'OAuth', 'Browser', 'Auth', 'Discovery', 'Graph', 'Ews', 'FreeBusy', 'ExchangeAdmin', 'Mailbox', 'Dns', 'Run', 'Report', 'Gui') {
+foreach ($part in 'Console', 'Config', 'Http', 'OAuth', 'Browser', 'Auth', 'Discovery', 'Graph', 'Ews', 'FreeBusy', 'ExchangeAdmin', 'Mailbox', 'Dns', 'Headers', 'Run', 'Report', 'Gui') {
     . (Join-Path $PSScriptRoot "src\GraphConnectivityTests.$part.ps1")
 }
 
@@ -56,8 +57,8 @@ Export-ModuleMember -Function @(
 # SIG # Begin signature block
 # MIImKQYJKoZIhvcNAQcCoIImGjCCJhYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCyTKkneycB5IAc
-# 6NjoRtBW/sPFPwn1XDH7lmIEYW0HR6CCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAbBuDyeufY6aVK
+# i2lF2YX/p7uCNyFIXCtkEKsbjEJdHqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -134,23 +135,23 @@ Export-ModuleMember -Function @(
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCBc1KdldSN7
-# pvx5HQee8dF6tBE0Ua6SuX9SrHrMPyI7HTANBgkqhkiG9w0BAQEFAASCAgAuQi8p
-# 2vYy6dYx3cmR6aWaSgJKXqangw0QuZufPMqv35WcaovVc5qGnRyhJ897Jnk6g7yY
-# 0mAANnCdoTaSz9+oHFWTub9CydwO3KShyOi4uuFmy5zZnqqMHiRkaM2Vd9ASglxu
-# 2wDnHkCcccj61piW5o+fGsq2QkyEyO3r4/GbdC0RC3gFFbd+e1DLrrK/yekNTWXY
-# kW7Gqxs5UmMLYr9ZZht3+no+ya1bK4U/zFG37oazG0uMPC9iR2NDoOK7mUpv59FD
-# YHVQxLp5auWQ8y9XAk2d4nNPc7dX3EhpUcw7X576AQTjk0CYi5ZzjkI153ZBbPzK
-# AEH4JtAxr0xGSTvETAX/dzpUspNNofyyDG5yEFYoWvF0rEDjA3V1I5EJWhspOlhM
-# HM3eN6K3xw2ObGHqlnG1fmvn50aR9d2I9Qhfw67dKXltp9fPbn2CGuivL4CTayDI
-# hkC3tHIiOrZEPZDHLNhGfKswXE0uZsusq9cHBc3pcubHEGu1aIvsNxrpfMG3vKW9
-# KF4ZSAjrqCrEj6ZwnIV2JC18WHMEzNZw5PR7YNaXgHZLy+s0i0CDUPL+XbafcIL/
-# 6bkyr30EVXrGwW4CJ4Z4QPTwJfsrprXYzlhoN8D0qCOOQbDt/q09jwMDA1MAbqQh
-# 7a1MmpxvGSatSlG9gcd3HPeZcw0DzrrUDVfm+qGCFM0wghTJBgorBgEEAYI3AwMB
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCBYtWKeDlo5
+# yTVUljV3p01eSFnE6xWCzbiMWvMXz/XeajANBgkqhkiG9w0BAQEFAASCAgBUr+cU
+# V5SRwvGt219nhWxzNLpeTFxzIMsTW1+bsBQLwA/2MRKkC4R+/J/pCo2csjs3mB2O
+# QutdduOL/wi7KcOfBvHNurIQmXeH0uzi1Ngr6preTVllf4N97Bv3tjyeosrivS+4
+# TDgD4KT3DTnRswdZBJgDkonooeUHV01xAjS7iSe7URm/Gx4KunTzip4c/WdfAtU6
+# t0X1EpXBojKfDWOScRm+tGdmdz0IZ1uwoec+jpS8PlDtjafdcpgfveQOCY7UbwNh
+# 3M3T9T7PbdSeAzeheUq9MMZhyG+WirYXANHYUhXCdl87AHlDtIuQVhiPR81BiR2h
+# Y08oRzObaz87bjnQJFj6ouUz+sN8hIE6UgX/SdfGG7QcrUqMryvnyYxad445n+cW
+# p3H/ah47ko1bgmBAYiEbM/I1wviE6CrmqlsK9g1K9FPyRH2MVg3l6mUKTSSsnRLA
+# X/Is9Ix6ArBL2FNV3TsfLsNRQVrjD+S4pkfhFHNVFY0Jr88aF6kD2VZB9ZoH1Kr4
+# P3BomjfWT1Y8K5KEhNmj0tt4dlDBAargqW81l6uuZgBBQ2bNfpI5Y7iZqjZph+yQ
+# qcCtBYs+r7SBhFSqULigWKYJCsh+Pxn+niRgTCrEH8WciQOLVWWtkVodjqekKDC8
+# FxNu4IhsmPXiMTGFMocH3at6/eYxStCSWeJSKKGCFM0wghTJBgorBgEEAYI3AwMB
 # MYIUuTCCFLUGCSqGSIb3DQEHAqCCFKYwghSiAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIDXKk0Rub6OFnqNOTwnz9c5lArlVwFBzKU7V/Z3/urfkAggwEX3lYjV7
-# ixgPMjAyNjExMTAxMDIyNTZaMAMCAQECEBHj2Lj9ppGOvzbyJLhY8I+gghGnMIIE
+# BAIBBQAEIGtk2dh9WPOzTC6ocNPAH5be6V3zD7khjlH8Z/B6drbZAgg35nlg14lN
+# WBgPMjAyNjExMTAxODI1MTlaMAMCAQECEBuSAE6RiHLUX/bNoYGLJjegghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -249,13 +250,13 @@ Export-ModuleMember -Function @(
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjI1NlowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIP05
-# euwEAYDvU3JFz1JgzyhAc+N+EkFrzwdJc1arJ1Q1MIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjUxOVowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIIIT
+# RZVfMDZB8G7p7OWabTzu3Frh6+QG+w7SUuitCidoMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERjBEAiAwadEJwBPQa0ErfqFjHntQgwpe/DLmXvEPlpW07nOB2wIgRdVc
-# LhWNhMBvvEscb/UqQgoqNNmdvoyNpcYM9NUY0RM=
+# zj0EAwIERjBEAiBC/wtfqhtfBy3LvTIiWQRu53SExYzETCQILLLcjmoj7gIgaTax
+# yiYbyHSyBJVpLzSazWO0mQld1/TvooSU7+V0i44=
 # SIG # End signature block

@@ -19,10 +19,13 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 #region DNS -----------------------------------------------------------------------------------------
+
+# The DNS servers of the run (Test.DnsServer), set for each run (Run.ps1); empty: the DNS servers of Windows.
+$script:GctDnsServer = @()
 
 function Invoke-GctDnsQuery {
     <#
@@ -33,7 +36,10 @@ function Invoke-GctDnsQuery {
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][ValidateSet('A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'NS')][string]$Type)
 
     if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { throw 'Resolve-DnsName (module DnsClient of Windows) is not available here: the DNS checks need Windows.' }
-    try { $answers = @(Resolve-DnsName -Name $Name -Type $Type -DnsOnly -QuickTimeout -ErrorAction Stop) }
+    # Test.DnsServer (-DnsServer): the DNS servers asked instead of those of Windows.
+    $server = @{}
+    if (@($script:GctDnsServer).Count) { $server.Server = [string[]]@($script:GctDnsServer) }
+    try { $answers = @(Resolve-DnsName -Name $Name -Type $Type -DnsOnly -QuickTimeout -ErrorAction Stop @server) }
     catch {
         if ($_.Exception.Message -match 'does not exist|DNS name does not exist|No records|9003|9501|NXDOMAIN|n.existe pas') { return @() }
         throw
@@ -68,8 +74,26 @@ function Resolve-GctDns {
     $records = @($all | Where-Object { $_.Type -eq $Type })
     $chain = @($all | Where-Object { $_.Type -eq 'CNAME' -and $Type -ne 'CNAME' })
     $text = if ($err) { "No answer: $err" } elseif (-not $all.Count) { 'No record (NXDOMAIN or empty answer).' } else { (@($all | ForEach-Object { "$($_.Name)`t$($_.Type)`t$($_.Data)" }) -join "`n") }
-    Add-GctTraceEntry -Method 'DNS' -Url "dns:$Name/$Type" -Request "$Type $Name (resolver of Windows)" -Response $text -StatusCode $(if ($err) { $null } else { 0 }) -Reason $(if ($err) { '' } elseif ($records.Count) { "$($records.Count) record(s)" } else { 'no record' }) -DurationMs $clock.ElapsedMilliseconds -Operation "DNS $Type"
+    Add-GctTraceEntry -Method 'DNS' -Url "dns:$Name/$Type" -Request "$Type $Name ($(Get-GctDnsServerText))" -Response $text -StatusCode $(if ($err) { $null } else { 0 }) -Reason $(if ($err) { '' } elseif ($records.Count) { "$($records.Count) record(s)" } else { 'no record' }) -DurationMs $clock.ElapsedMilliseconds -Operation "DNS $Type"
     [pscustomobject]@{ Name = $Name; Type = $Type; Records = $records; Chain = $chain; Error = $err }
+}
+
+function Get-GctDnsServerText {
+    <# The DNS servers asked, for the trace and the messages: Test.DnsServer, else those of Windows. #>
+    if (@($script:GctDnsServer).Count) { return "DNS server $(@($script:GctDnsServer) -join ', ')" }
+    return 'resolver of Windows'
+}
+
+function Test-GctDnsAnswer {
+    <#
+        Whether a DNS server answers at all: one query of Test.DnsProbeName (a name that always exists). An empty
+        answer or NXDOMAIN is still an answer; no answer (timeout, no server, no network) is not. Returns Answers,
+        Server (text), Probe and Error.
+    #>
+    param([Parameter(Mandatory = $true)][hashtable]$Context)
+    $probe = if ([string]$Context.Config.DnsProbeName) { [string]$Context.Config.DnsProbeName } else { 'microsoft.com' }
+    $q = Resolve-GctDns -Name $probe -Type 'A'
+    [pscustomobject]@{ Answers = -not $q.Error; Server = Get-GctDnsServerText; Probe = $probe; Error = $q.Error }
 }
 
 #endregion
@@ -260,6 +284,9 @@ function Test-GctAnonymousEndpoint {
     $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::new($Method), $Url)
     try {
         $null = $request.Headers.TryAddWithoutValidation('User-Agent', [string]$Context.Config.UserAgent)
+        # An empty Bearer header, as Exchange Online and Outlook send it: Exchange offers its OAuth challenge
+        # (trusted_issuers, authorization_uri) only to a request that announces Bearer.
+        $null = $request.Headers.TryAddWithoutValidation('Authorization', 'Bearer')
         if ($Method -eq 'POST') { $request.Content = [Net.Http.StringContent]::new('', [Text.Encoding]::UTF8, 'text/xml') }
         $response = Invoke-GctHttp -HttpClient $Context.HttpClient -Request $request -Label 'no credentials'
     }
@@ -356,10 +383,10 @@ function Invoke-GctStageOnPremises {
 #endregion
 
 # SIG # Begin signature block
-# MIImKwYJKoZIhvcNAQcCoIImHDCCJhgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAQZwBt9qM6ukJd
-# o8DVS1P8TswsGxPJwqUgoh9LsSSJAKCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAETt1677PfFCNr
+# lxNSty+yP+JBPJLvone/EXvckGjVpqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -431,28 +458,28 @@ function Invoke-GctStageOnPremises {
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEjCCGA4CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYETCCGA0CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCBTEh94x3zR
-# IfGQ2inGTUpmR1eYzovUqBPxvnb4Aouv/jANBgkqhkiG9w0BAQEFAASCAgCa0bzC
-# gGdwu5IGGJMGI2ar0dx/JyCUfvn2j5bUp1SjP5Z12mM6S8kUO3xUWgyPvklqW+DZ
-# UENizVdHzGaC7xsJKDgXIvuiLW27VIqXWH/mmKsq1x3t6PphZigXLSjBArISeSys
-# /QNxsbuKfDqYrSASb91yeInFkJpxiDgTouygzz99KFu+Egy2htl/0jUv8cnbOuSv
-# dsd5mK11AWBmX1+wEcQWw8uiP/gx0/blBczZFMTq2eRCkKSKVLruLfir47jWA5Kw
-# yfZZeKNFkfK8LMp4fbK3s6aqtcWHo6S28itnEviFxjHcu3lBBaJg6MjKdPAE253U
-# 07ZaaQJ5vhwK3LjOtIw97MbMCC0xTYERwGPPDpIPnTmt2oMe30JuopEY2QurFwiy
-# rmesjuNGloNzqbR5hBbLeUiPGGhKugcyLsN0vZN89UBHTBvUknR1TUpfFrtGEmtV
-# VGfqJxgXuceCtNgQp4t9d6QmefBqQRB0u3aHyUGjoQj9reXzk6dmqqPzvRh4THOi
-# nAqMiEnmtsuH51irVNlmax5rgqOVm9bzBrrR93q2PqsI8zJtF5q9C6CIymb6dQGl
-# 0D+lognkGe0+5syfjAzzbMB31eYjxtaF/CA8hlkMtNdy+PI65EAIwOhHsU7qmDRc
-# 9wHdwzPLJwpMBxECwGKprOpT7l71C2PmtzGcKaGCFM8wghTLBgorBgEEAYI3AwMB
-# MYIUuzCCFLcGCSqGSIb3DQEHAqCCFKgwghSkAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCA1SWdcny59
+# igz4Y43AOsmveV6Hdbe77g4oZI+aRgu2bTANBgkqhkiG9w0BAQEFAASCAgCGl+QD
+# h/O1BnpS86BFs6rWvWUzgvHMCMDequdGyMDV2mm3PMc4GW5G4XdI8E/iyxSKs441
+# lNmnd6CiivJ3EoZPK0C11UE2M7a9xS8cg+CVUndcteFLcj0qo6MEW/hQAbBJacA0
+# xQko+oHKcisuIv3tNz3DKSJcNPxVrWIOC666Vyoh7wzYSM2RMsrHXJlswg2W41dW
+# fqxAv04Z7EfUFDlgl63tycJU+4Ky7DrPkBL5wCGCKgyNNTeBxGEmeapKM7GLJPpZ
+# V8sk6O3v0Y02QRXWbF1aAV03YESU1f3t3Z2Z0fqTABcKjVV1U9wlZzBykc2taEsO
+# whmAmFM8Zmw9ETrKekdg5vIlQPwGsbB96aiWRuFjXKTf4vdFlDSxLz/qNMdvKpos
+# 7rG/LHfOcIO+2NADOJCSVpb5AMaFiDtagZ0l1uFD7iiXrqOyr7Zculfl31R05av6
+# rA0Stq43pYMEYXep9Gm5aCeGFUS6joCaL3b+pYL+R556h/yCHNwm+OHPYVyXftzu
+# EfeIh2GBHE/s8rdzYfLBR1bo1CZQFuKWoyb5bmdn1InOc1EfqXnTFQoQoXsvJ0Nn
+# mOky8O+SKrkIhEvle/mlS7cEr32ldZSZup0ETw/o8H/cEivLKvmcOxB91TLx5yMX
+# jytGLcdBmpUhkTVR7xZRiw4VLVxq6u0fw77HvKGCFM4wghTKBgorBgEEAYI3AwMB
+# MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEILml8/G6kmpKd+3u9VJvv8P/PfLMPD+dxh8HrxtsqtGPAghmH1k7xm4t
-# ixgPMjAyNjExMTAxMDIzMjJaMAMCAQECEANfDzhsGsMyp9vRYLLUvtmgghGnMIIE
+# BAIBBQAEIBlY3dg1h0fC7VJiLETNcdMRlQdcPhVgpH48V5yFHCLwAggWItnOeup1
+# XBgPMjAyNjExMTAxODI2MDlaMAMCAQECEHNV6zHqOdqNREpo/NTaKeagghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -547,17 +574,17 @@ function Invoke-GctStageOnPremises {
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlcwggJTAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlYwggJSAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjMyMlowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIOUD
-# TmCQmv5qvcF2vqs/LgPeKkk/8q7GC11ZTINvfEZjMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjYwOVowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIGtF
+# 64sJj0u9Yn5bSxGx5X3225zBWaISXeyxnfPDlsOaMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIESDBGAiEA1CCZkrEjzNarXxA7At1GIVB6lmTe9/V8myi2um0gCNQCIQCH
-# 7sKYPyg0f4nDPIXradGH5KWwbEdsDlEQZgrfuE69jQ==
+# zj0EAwIERzBFAiB9d6qgVQ/SOmiRwzCpy2yrxUrTILzI2PvRy5jY1XU2aAIhAOi2
+# c0yG6ByKGUojPIbsVL9xhpah/EgGUSS7PAnUr3ZF
 # SIG # End signature block

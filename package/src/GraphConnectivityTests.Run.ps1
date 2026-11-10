@@ -10,7 +10,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 function Add-GctStep {
@@ -55,7 +55,7 @@ function Invoke-GctConnectivityTest {
     .PARAMETER Configuration
         Settings hashtable (Import-GctConfiguration). Missing keys take their default value.
     .PARAMETER TestType
-        FreeBusy, MailboxServices, Provisioning, DomainDns or All. Default: the TestType of the configuration.
+        FreeBusy, MailboxServices, Provisioning, DomainDns, MessageHeaders or All. Default: the TestType of the configuration.
     .PARAMETER AccessToken
         A Microsoft Graph token already obtained (integration only): the sign-in is skipped. Never written anywhere.
     .PARAMETER OnPremisesCredential
@@ -76,8 +76,9 @@ function Invoke-GctConnectivityTest {
     $stages = @(Get-GctScenarioStages -TestType $cfg.TestType -Configuration $cfg)
     $scenario = $script:Scenarios | Where-Object Name -eq $cfg.TestType
 
-    $previous = @{ Quiet = $script:Quiet; Trace = $script:GctTrace; Cookies = $script:GctCookies }
+    $previous = @{ Quiet = $script:Quiet; Trace = $script:GctTrace; Cookies = $script:GctCookies; DnsServer = $script:GctDnsServer }
     $script:Quiet = [bool]$Quiet
+    $script:GctDnsServer = @($cfg.DnsServer | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() })
     $started = [DateTimeOffset]::UtcNow
     $context = @{
         Config         = $cfg
@@ -112,6 +113,8 @@ function Invoke-GctConnectivityTest {
         HttpClient     = $null
         OnPremisesCredential = $OnPremisesCredential
         OnPremisesSchemes    = @{}
+        Headers        = $null
+        HeaderRoute    = @()
     }
     if ($AccessToken) { $context.Tokens.Graph = [pscustomobject]@{ AccessToken = $AccessToken; RefreshToken = $null; Flow = 'supplied'; Claims = Get-GctTokenClaims -AccessToken $AccessToken; Scope = $null; Resource = $null } }
     $handler = [Net.Http.HttpClientHandler]::new()
@@ -125,7 +128,7 @@ function Invoke-GctConnectivityTest {
     $context.HttpClient.Timeout = [TimeSpan]::FromSeconds([int]$cfg.HttpTimeoutSeconds)
 
     # A failure of these stages stops the test; the others fail alone.
-    $blocking = @('Discovery', 'SignIn', 'Source')
+    $blocking = @('Discovery', 'SignIn', 'Source', 'HeaderRead')
     try {
         for ($i = 0; $i -lt $stages.Count; $i++) {
             $stage = $stages[$i]
@@ -149,6 +152,9 @@ function Invoke-GctConnectivityTest {
                     'AutoReply' { Invoke-GctStageAutoReply -Context $context }
                     'Provisioning' { Invoke-GctStageProvisioning -Context $context }
                     'DomainRecords' { Invoke-GctStageDomainRecords -Context $context }
+                    'HeaderRead' { Invoke-GctStageHeaderRead -Context $context }
+                    'HeaderDns' { Invoke-GctStageHeaderDns -Context $context }
+                    'HeaderRoute' { Invoke-GctStageHeaderRoute -Context $context }
                 }
             }
             catch {
@@ -164,6 +170,7 @@ function Invoke-GctConnectivityTest {
         $script:Quiet = $previous.Quiet
         $script:GctTrace = $previous.Trace
         $script:GctCookies = $previous.Cookies
+        $script:GctDnsServer = $previous.DnsServer
         $script:GctTraceStage = $null
     }
 
@@ -209,6 +216,9 @@ function Invoke-GctConnectivityTest {
         Provisioning    = @($context.Provisioning)
         DnsRecords      = @($context.DnsRecords)
         Actions         = @($context.Actions)
+        Headers         = $context.Headers
+        HeaderSummary   = Get-GctHeaderSummary -Analysis $context.Headers
+        Route           = @($context.HeaderRoute)
         Throttled       = $context.Throttled
         Counts          = $counts
         Steps           = $steps
@@ -218,10 +228,10 @@ function Invoke-GctConnectivityTest {
 }
 
 # SIG # Begin signature block
-# MIImKQYJKoZIhvcNAQcCoIImGjCCJhYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIImKwYJKoZIhvcNAQcCoIImHDCCJhgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCnhoTlidylqKWA
-# QnvOKj4eGMdrrC7ezAiCRHEcj8d3dqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCp8FHWE3vixiTo
+# 7WobEmrZej25pcBPhcTNSzt1PxUvL6CCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -293,28 +303,28 @@ function Invoke-GctConnectivityTest {
 # ULeH38N0Vr83psiJVuBSxQyt5nRVrpYz7FACq5gtXELkyViq/rGOlJKaRrgQ6WWq
 # eoIXqKhVFAdP/jAEm2M8ezoVYsUgPyKY2OcuecV9coulAcxUIUydx6qYiOfsGj5u
 # Dy7l4aYjvB771wkUMzUQwxzcDYXJtMMTaWRe6n9EemR67jc73u5CJyFg3PfA5WR1
-# wZislcdCZuS6MYIYEDCCGAwCAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
+# wZislcdCZuS6MYIYEjCCGA4CAQEwgYwweDELMAkGA1UEBhMCVVMxDjAMBgNVBAgM
 # BVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMREwDwYDVQQKDAhTU0wgQ29ycDE0MDIG
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCaU70AIbIl
-# tnJuQ2krAEBsZf6uPaa5C7ANI2H2G10FXDANBgkqhkiG9w0BAQEFAASCAgCCUYuV
-# nofIxVw33tq/qLVjsr1hU2ekqDAfgrV29K0XQkhjOHk9+wchTxmigCaJ2oDEetAf
-# PpJolFoIDy3VIejpSXcUEhyOOQQazFbx3beLPNwuv+fjUilFybZcd6du0QlJyuDj
-# u9UzNgLrds1siQL+tDe3a/n1a3TpshZV9SmtgFL6rxO9uCVXZKJUSHiMYDvAKYUV
-# LNXRbTZeOm2z0hhsdhAcudG4YVvuLo73XWmOXKijV5W91Cbyps12Yz6O7t30+SC3
-# xj7ZVeW4sXOeqWuLwcdXgT5tUr0qqW4V06URYkIKBtpntZ1IhJf6QqFAxvBc3ues
-# Hna7NyfRoKyFaKqc+CYq/lgb9sVpvrWi3b8/KqW/Jl87D0HkllqxAb/otMU1Vrwg
-# DY8OimoPi7sD73GjccO41nRtmZq382Bj3i4+ImtRfnlWBLTDTTds+BIV2wtOzcQo
-# YZgcS8pW71z5Bf02qozA9GvfiOkYRudxwZ/paBtFEPzkk0xv4TgXv8oktO8ecJQY
-# JLrjpi1mOEgKVg6VHIUZWzUPkKd8U8PMjMh7Z+tpa1GUTsoaz7+x+ZZd81euncmo
-# DWS/3+NHdiVSmqiMLIB1z75MXZ67XTgdfXya0EPDBdID8PdbkWRqenVabfGppnGX
-# bygl7sE9J44KBypiH4gwndQLNFvJTXWudHSYpaGCFM0wghTJBgorBgEEAYI3AwMB
-# MYIUuTCCFLUGCSqGSIb3DQEHAqCCFKYwghSiAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAlECpIvO5E
+# c2mb/bkrc1pBsnwC3wkP/vBbqWAIvUGWtjANBgkqhkiG9w0BAQEFAASCAgBUxLsK
+# RPGky1t/EkznO6PDuX56aUnSya1oUEjBV0vnPOwFCbKX4UwBjQGjXdWW5m+U6fQ3
+# LTT+LdDMoiQ5GMPnhQngtNHXr/u6NLjFmew9Jy0W7pqn/r9C4hiW0g1W06FMn78o
+# W+wAGhOGG0Igp/3PS6WFKwbBIB+wfBvsOIYjg80fCIemF/9h0MtP4wt049Cp5GaZ
+# 8KRu2IhWOVAEYPwydEEOSYqDezFV5itsArNRjRCwIZRWUcAqqo+FzyXW6Rp2ssTy
+# hydh6JzZbfArCIWsfn1LhJ2QgY9wHWhOsgvCfbwETZA103vvFjbrXPjJsvkZ3xz5
+# hitZRF2/1JAyccpBOOquZ7eHp/qk6KHxqiL8jmN8ibl4m3jBwoegT9DFfjBB1K9R
+# j2ckkYTUup69KHpV8EJ7/SN19/VZqHe9FxXwn4fY2atBv4cN7wuRN9lpk0qaT5ON
+# hVGJ0BKdFGMNUjlungwgFcK4grPlNnOrqLgxFOozSxJGgkwS4iXb5is4iHs7uajh
+# VZPxbQB0rVhAZjJl0/a6tfVqZJltRSKMeSsX0+OXXSHRGu4mPOReaPuE+AEV4nFH
+# y4a3GtGB7eUkoqP0CjUMttetMeeGRhyZGNuUi4q67XDtqBJTFE626OiT5PkvAy8L
+# XuT/88vzbqCLCs3tphfEqhHgY7lAftEvNDSvjqGCFM8wghTLBgorBgEEAYI3AwMB
+# MYIUuzCCFLcGCSqGSIb3DQEHAqCCFKgwghSkAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIHcEl+b2rC10kH9Pb5sYPQTPNsZJ5PW/iCD/zvkWMhdnAghvewlDTiwI
-# ERgPMjAyNjExMTAxMDI0MTJaMAMCAQECEDNUi83zHNQkkvyCAR694IugghGnMIIE
+# BAIBBQAEIG0yeWuvWa+iWnHakfZOWfg5XABDa3Z1zGJ+1bVX407JAgg9BjPyQnnx
+# cxgPMjAyNjExMTAxODI3MDJaMAMCAQECEDvW6ve51F3mxzP+22y2X8mgghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -409,17 +419,17 @@ function Invoke-GctConnectivityTest {
 # rDMtXndUg3qhJL4pA3ZUlo7w5lM5ml+A7ijr/3Gk2v4QRoDeE2ShmTXdHgtqo8L/
 # fT119mYcETycE2NYGRXsBl3N0rzDsHRr8P3TrprqhRrX04iS0P7eQ+lDxgS3yhGn
 # 3OzWGhDt9Gf2x1qe0/qdhFAVOkXxzMZz4Uat6xsAfzX0+/m8GEKW5Ojw/HY+kLvV
-# wzSPOzGCAlUwggJRAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
+# wzSPOzGCAlcwggJTAgEBMIGGMHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhh
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjQxMlowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIAlv
-# tD/vTRXlXotfYoy51eWpUf5gNPn+01ztjdjJWRJGMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjcwMlowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEINzS
+# Xy8K6fszzEVROMTjEg1KtRvvnhgf6wo41NrNuharMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERjBEAiBssvqMDQzwN2nSlBlq8sx0/nJMn57HYFW6MP11AcXZnAIgC+wo
-# phmfc1FBLPASaYJlfLktHlm9/pWXo4NSNok08D8=
+# zj0EAwIESDBGAiEAtkMY3fMpVpHqsvbrRMSVx9y+xn9pAUXLW7uRpIwUC6gCIQDw
+# jg7X5oNPh7RGp87nMU5qtB4bIUkLbIKZHWBJ25EG/Q==
 # SIG # End signature block

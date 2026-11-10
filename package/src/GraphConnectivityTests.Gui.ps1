@@ -8,7 +8,8 @@
     controls with the same colours on PowerShell 7.4.
 
     Layout: a header; the test picker (one card per test of Get-GctTestCatalog, with its description);
-    on the left the mailboxes (source, targets, on-premises host, domain, cloud), the sign-in (context,
+    on the left the mailboxes (source, targets, on-premises host, domain, cloud) - for MessageHeaders the headers
+    instead (pasted, or an .eml or .txt file chosen with Browse, and whether to compare with the DNS of today) -, the sign-in (context,
     client, tenant, certificate, on-premises authentication, sign-in mode) and the options (changes,
     administrator checks, free/busy days); on the right a notice and the progress, with the counts of
     the last run, in two views: the timeline (one node per stage on a rail, its checks under it - a stage
@@ -25,12 +26,12 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 $script:Gui = $null
 $script:GuiIconFont = 'Segoe Fluent Icons, Segoe MDL2 Assets'
-$script:GuiTestGlyphs = @{ FreeBusy = 0xE787; MailboxServices = 0xE715; Provisioning = 0xE77B; DomainDns = 0xE774; All = 0xE9D5 }
+$script:GuiTestGlyphs = @{ FreeBusy = 0xE787; MailboxServices = 0xE715; Provisioning = 0xE77B; DomainDns = 0xE774; MessageHeaders = 0xE8BD; All = 0xE9D5 }
 $script:GuiContexts = @(
     [pscustomobject]@{ Name = 'User'; Text = 'User (source user)' }
     [pscustomobject]@{ Name = 'Application'; Text = 'Application' }
@@ -156,7 +157,7 @@ function Get-GctGuiXaml {
               <ListBox x:Name="TestPicker" ItemContainerStyle="{StaticResource GctChoice}" BorderThickness="0" Background="Transparent" Padding="0"
                        ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
                 <ListBox.ItemsPanel>
-                  <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                  <ItemsPanelTemplate><UniformGrid Columns="3"/></ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
               </ListBox>
             </StackPanel>
@@ -170,7 +171,29 @@ function Get-GctGuiXaml {
             <StackPanel>
             <Border x:Name="MailboxCard" Style="{StaticResource GctCard}">
               <StackPanel>
-                <TextBlock Text="Mailboxes" Style="{StaticResource GctCardTitle}"/>
+                <TextBlock x:Name="MailboxTitle" Text="Mailboxes" Style="{StaticResource GctCardTitle}"/>
+                <StackPanel x:Name="HeadersPanel" Visibility="Collapsed">
+                  <TextBlock Text="Headers of the message: paste them, or choose an .eml or .txt file" Style="{StaticResource GctLabel}"/>
+                  <TextBox x:Name="HeaderText" AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap" Height="230" FontFamily="Cascadia Mono, Consolas" FontSize="11.5"
+                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"/>
+                  <TextBlock x:Name="HeaderHint" Style="{StaticResource GctHint}"
+                             Text="In Outlook: open the message, File &gt; Properties &gt; Internet headers. In Outlook on the web: ... &gt; View &gt; View message details. Copy all of it."/>
+                  <TextBlock Text="Or a file (.eml or .txt): only the header block is read" Style="{StaticResource GctLabel}"/>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="HeaderFile"/>
+                    <Button x:Name="BrowseHeader" Grid.Column="1" Content="Browse..." Margin="8,0,0,0" Padding="12,4"/>
+                  </Grid>
+                  <CheckBox x:Name="SkipDnsCrossCheck" Margin="0,10,0,0">
+                    <TextBlock Text="Do not compare with the DNS of today (no DNS query)" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <TextBlock Text="DNS server: empty for those of Windows; when none answers, the header is read offline" Style="{StaticResource GctLabel}"/>
+                  <TextBox x:Name="DnsServer"/>
+                </StackPanel>
+                <StackPanel x:Name="MailboxFields">
                 <TextBlock Text="Source mailbox: signs in and asks for the free/busy" Style="{StaticResource GctLabel}"/>
                 <TextBox x:Name="SourceMailbox"/>
                 <TextBlock x:Name="TargetLabel" Text="Target mailboxes: one per line or a comma list" Style="{StaticResource GctLabel}"/>
@@ -183,6 +206,7 @@ function Get-GctGuiXaml {
                 <TextBox x:Name="Domain"/>
                 <TextBlock Text="Cloud" Style="{StaticResource GctLabel}"/>
                 <ComboBox x:Name="Cloud" HorizontalAlignment="Stretch"/>
+                </StackPanel>
               </StackPanel>
             </Border>
               <Border x:Name="OptionsCard" Style="{StaticResource GctCard}">
@@ -423,6 +447,10 @@ function New-GctTestForm {
     $controls.OnPremisesHost.Text = [string]$Configuration.OnPremisesHost
     $controls.SkipOnPremisesChecks.IsChecked = [bool]$Configuration.SkipOnPremisesChecks
     $controls.Domain.Text = [string]$Configuration.Domain
+    $controls.HeaderText.Text = [string]$Configuration.HeaderText
+    $controls.HeaderFile.Text = [string]$Configuration.HeaderFile
+    $controls.SkipDnsCrossCheck.IsChecked = [bool]$Configuration.SkipDnsCrossCheck
+    $controls.DnsServer.Text = @($Configuration.DnsServer | Where-Object { $_ }) -join ', '
     $clouds = foreach ($key in $script:Clouds.Keys) { [pscustomobject]@{ Name = $key; Text = "$key - $($script:Clouds[$key].Name)" } }
     Set-GctGuiChoices -ComboBox $controls.Cloud -Choices @($clouds) -Selected ([string]$Configuration.Cloud)
 
@@ -464,8 +492,14 @@ function New-GctTestForm {
     Set-GctGuiStatus 'Ready' 'Ready'
 
     foreach ($name in 'TestPicker', 'Context', 'Client', 'SignIn', 'OnPremisesAuthentication', 'OnPremisesCredentialScheme', 'Cloud') { $controls[$name].Add_SelectionChanged({ Update-GctGuiForm }) }
-    foreach ($name in 'AllowWrite', 'AdminChecks', 'SkipOnPremisesChecks') { $controls[$name].Add_Click({ Update-GctGuiForm }) }
-    foreach ($name in 'SourceMailbox', 'TargetMailboxes', 'AppClientId', 'TenantId', 'CertificateThumbprint') { $controls[$name].Add_TextChanged({ Update-GctGuiForm }) }
+    foreach ($name in 'AllowWrite', 'AdminChecks', 'SkipOnPremisesChecks', 'SkipDnsCrossCheck') { $controls[$name].Add_Click({ Update-GctGuiForm }) }
+    foreach ($name in 'SourceMailbox', 'TargetMailboxes', 'AppClientId', 'TenantId', 'CertificateThumbprint', 'HeaderText', 'HeaderFile') { $controls[$name].Add_TextChanged({ Update-GctGuiForm }) }
+    $controls.BrowseHeader.Add_Click({
+            $dialog = [Microsoft.Win32.OpenFileDialog]::new()
+            $dialog.Title = 'Headers of a message'
+            $dialog.Filter = 'Messages and text (*.eml;*.txt)|*.eml;*.txt|All files (*.*)|*.*'
+            if ($dialog.ShowDialog($script:Gui.Form)) { $script:Gui.Controls.HeaderFile.Text = $dialog.FileName; $script:Gui.Controls.HeaderText.Clear() }
+        })
     $controls.Run.Add_Click({ Invoke-GctGuiRun })
     $controls.Cancel.Add_Click({
             if ($script:Ui) { $script:Ui.Cancel = $true; Add-GctGuiLine 'Warn' 'Cancellation requested: the run stops at the next check.' }
@@ -590,6 +624,22 @@ function Update-GctGuiForm {
     $c.DescriptionTitle.Text = $test.DisplayName
     $c.Description.Text = $test.Description
 
+    # Message headers: the headers instead of the mailboxes; nothing signs in.
+    $headers = $test.Name -eq 'MessageHeaders'
+    & $show $c.HeadersPanel $headers
+    & $show $c.MailboxFields (-not $headers)
+    $c.MailboxTitle.Text = if ($headers) { 'Message headers' } else { 'Mailboxes' }
+    foreach ($card in 'SignInCard', 'OptionsCard') { $c[$card].IsEnabled = -not $headers; $c[$card].Opacity = if ($headers) { 0.5 } else { 1.0 } }
+    if ($headers) {
+        $pasted = [bool]$c.HeaderText.Text.Trim()
+        $c.HeaderFile.Opacity = if ($pasted) { 0.5 } else { 1.0 }
+        if (-not $pasted -and -not $c.HeaderFile.Text.Trim()) { Set-GctGuiNotice 'Paste the headers of a message, or choose its .eml or .txt file with Browse.' Caution }
+        elseif ([bool]$c.SkipDnsCrossCheck.IsChecked) { Set-GctGuiNotice 'Nothing signs in and nothing leaves this computer: the header is read here, without any DNS query.' Info }
+        else { Set-GctGuiNotice 'Nothing signs in: the header is read on this computer. Then the DNS of today is asked (resolver of Windows, or the DNS server typed) for the domains, the DKIM keys and the sending IP the header shows - so that a finding already handled since is marked fixed.' Info }
+        $c.Footer.Text = "Reports: $($g.Configuration.OutputPath)"
+        return
+    }
+
     # Mailboxes: which fields the test uses.
     $targets = @(Split-GctGuiList $c.TargetMailboxes.Text)
     $usesTargets = $stages -contains 'Target' -or $stages -contains 'Provisioning'
@@ -680,6 +730,13 @@ function Get-GctGuiConfiguration {
     $cfg.SkipOnPremisesChecks = $c.SkipOnPremisesChecks.IsEnabled -and [bool]$c.SkipOnPremisesChecks.IsChecked
     $cfg.Domain = if ($c.Domain.IsEnabled) { $c.Domain.Text.Trim() } else { '' }
     $cfg.Cloud = Get-GctGuiChoice $c.Cloud
+    if ($test.Name -eq 'MessageHeaders') {
+        # Text pasted wins over a file chosen.
+        $cfg.HeaderText = if ($c.HeaderText.Text.Trim()) { $c.HeaderText.Text } else { '' }
+        $cfg.HeaderFile = if ($cfg.HeaderText) { '' } else { $c.HeaderFile.Text.Trim() }
+        $cfg.SkipDnsCrossCheck = [bool]$c.SkipDnsCrossCheck.IsChecked
+        $cfg.DnsServer = @($c.DnsServer.Text -split '[,;\s]+' | Where-Object { $_ })
+    }
     $cfg.Context = Get-GctGuiChoice $c.Context
     $client = Get-GctGuiChoice $c.Client
     if ($cfg.Context -eq 'Application') {
@@ -787,6 +844,11 @@ function Show-GctGuiResult {
     $lines = [Collections.Generic.List[string]]::new()
     $fb = @($Result.FreeBusy)
     if ($fb.Count) { $lines.Add(('Free/busy: {0} of {1} mailbox(es) answered.' -f @($fb | Where-Object Status -ne 'Failed').Count, $fb.Count)) }
+    $hs = Get-GctField $Result 'HeaderSummary'
+    if ($hs) {
+        $lines.Add("Route: $($hs.Hops) hop(s), delivered in $($hs.Transit)$(if ($hs.LongestWait) { ", longest wait $($hs.LongestWait)" }). SPF $(if ($hs.Spf) { $hs.Spf } else { '-' }), DKIM $(if ($hs.Dkim) { $hs.Dkim } else { '-' }), DMARC $(if ($hs.Dmarc) { $hs.Dmarc } else { '-' }).")
+        if ($hs.DnsCrossCheck) { $lines.Add("DNS of today: $($hs.Fixed) finding(s) fixed since the message was received.") }
+    }
     # The first problem by name only: its message, details and HTTP exchanges are in the timeline, scrolled to it.
     $first = @($Result.Steps | Where-Object Status -eq 'Failed') + @($Result.Steps | Where-Object Status -in 'Blocked', 'Warning') | Select-Object -First 1
     if ($first) { $lines.Add("First issue: $($first.Name) ($($Result.StageTitles[$first.Stage])), shown below.") }
@@ -1495,8 +1557,8 @@ function Show-GctTestGui {
 # SIG # Begin signature block
 # MIImKQYJKoZIhvcNAQcCoIImGjCCJhYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBbPcNxvUPeVvJY
-# MwTjAJdyNenH9mOHw09l3XjdZUZ5aqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCGPZpAUWW6UeiC
+# kUp3MQHkT+uEZ5AWRzJt2bzbzjnyOqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -1573,23 +1635,23 @@ function Show-GctTestGui {
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCcQXxWsa0j
-# xw4SPa6CqYsw7Kb9lZMukdma/g+wd5+k2jANBgkqhkiG9w0BAQEFAASCAgAOXQPJ
-# 41fNYyPSoeIluIAWG6AzgCMq2/BFOFLQ40vz82tQFUssrAkuAyepsYO1U3LoHdgd
-# ZUhnshN5uKML7NJI1YkODWrj5z31OqpNqibC60N76eGRZNr4xkMqkQoJ2Jvjcuj/
-# 110UrXthfi7EiQ7LhCnD1p/Z7RkzYMoJoUAegelicOnQKmdFFJwKyFb7Q/T0vPgL
-# DCHZQNUGx5W/x9t1VJQPCXjA5KDFFkISNJQ25+e8sP+RhUHqdwEKhFlYCx8Y05nl
-# zwBShQiwSGuGHLTER6d+sJx7uvfoP70R4bbb0ic7XxlVSaUsNce2EpWOcsL7Pfk6
-# tRzWn1uBShYtlRCusf53f8kO+KO5+3r2axemgu+AijARHdbP6A4Gl5US5y1gMIos
-# ysGzem6iSp8vry4Qg589XifpQkjOVTGrt1UUpbowUZfCikUwycFGWqqry+/yHtiX
-# rAT2x/kz2vgiOa2LvZ60U1Y+Fr5wBtKcQdKuxaYifcJp7vyCUagXat/fIiiMDnKA
-# pp8mzC+QQ3PoBoSoOd1Ea1jWxyZGmt5JArKsIEg5o2kZTuitdekyCsYXYKDykvB3
-# ODFsvMutLy9/JC6ZDdigvK6X0BQJ1yJyFQtgSK9a1DTGbgstkKmNyMczAv8h7X5s
-# G0bSyP7L0bedYXqhwxjASC9KdRb3eQQKKhOxlKGCFM0wghTJBgorBgEEAYI3AwMB
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAFTR79s6It
+# JBDj/wMrpfBRBd9WX3L+bZ133M6FcsSo3jANBgkqhkiG9w0BAQEFAASCAgAAzQt9
+# ukmphrv6mR/2aFG2mQuSsH2NwFKJ0fdV6SNFOMt0wHlFh5gImxzM3i0QIw5eqstX
+# lhgDbStbvY/MsSIW0zo4jH9GuBS5EHmYiYPkdP/RZs/F9MPHs/m20JEdn17XXlNk
+# U2nWNYF+ryo3UyI3bt/YoiOPKrWBoMmlOJ04o5JbeeIStI9rnZoBVsJl+t4XRIuw
+# gbVmTbxZaaJm96nYfw9qabNKA2vxyUqYRU8nR9RN16ACju4vh+nDwpHXeX0E/SDX
+# +83isuRQQ5kHJBdxE+P9CpgrSKBFHAAfaMDOCTAmClsD4a2bA0SfyVOadV9RDZ8j
+# 1a029emaGRjDBtUenSMqk9kFRXRtQPSfIdvpZuYv9Z4nlCYnihICZV5qteZSRUH/
+# NE7kdPJiaFB33PuecbWs/Zu0Oy7M6aADdzVOg1z0C75d1VV34n9V8KtfK0MJHK4r
+# YsG4cIeVu7Td0xwNYE/OgdP3SwsQVSMB64KOaS9AYehY9a2W9SWfsmsiUxVCDlOs
+# Q+fhVnb3UyPWe8lFKSkGIAVrlTv7UtWGHSkBSkF9NLo2Sd3yn2DF4gFxj2rVD8DI
+# q3cT1zAx97TBfOguoYfPXpUyJy8oJt+MaDpbSpt4TpS9XJhTnCoRWetTnud4wVBB
+# ZcKoRUrHr5Xa6vxt/yPf68MTlP1OlnSMyuut66GCFM0wghTJBgorBgEEAYI3AwMB
 # MYIUuTCCFLUGCSqGSIb3DQEHAqCCFKYwghSiAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEILaaZJcNRm7KnTY4IqABddZm/fOQXNemhex2NTIJn1clAggQbPrrR97u
-# vxgPMjAyNjExMTAxMDIzNDlaMAMCAQECECdnN+7rEDzMhS7CvVOy+KOgghGnMIIE
+# BAIBBQAEIEDhn5YoGRr2xWoOfv9JEYEn7aWYhDKFip9m4BW9XEXoAgg3nB838eof
+# 9hgPMjAyNjExMTAxODI2MjVaMAMCAQECEGNwLabHijX4R8zv0QK6QPygghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -1688,13 +1750,13 @@ function Show-GctTestGui {
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjM0OVowKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIEJF
-# dYqyAeMOZbojctPRgbRo/O0+nrouIozwVpsg1G1KMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjYyNVowKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEICft
+# 3dOMVK7UsLrnAvh9fFyWP4ZxrF2Ey0lG/pRy5okeMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERjBEAiALjIunJi/MTG8oyWizhQVOEpuKSW3K8rzgCVTTjSIXMwIgG4oq
-# 6EGo3PezMXTWcOXhxDhKes8j51iOXhkx34KXVgU=
+# zj0EAwIERjBEAiBuDNQgPOm1MY0Bxg+wSXPge7t7oDhOvEIzvHpdaCJB6gIgWQxZ
+# JTWBA193pEZbqnJNR9OjRRvrbN7xrW622XUou04=
 # SIG # End signature block

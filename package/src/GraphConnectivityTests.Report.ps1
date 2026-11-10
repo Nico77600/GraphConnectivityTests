@@ -11,6 +11,7 @@
       <prefix>-Provisioning.csv  user, licenses, mailbox in Exchange Online or not
       <prefix>-Dns.csv           DNS records found and expected
       <prefix>-Actions.csv       what the run changed (automatic replies scheduled and restored)
+      <prefix>-Route.csv         message headers: one line per step of the chronology (sender, hops, mailbox) and its findings
       <prefix>-Trace.csv         every HTTP request sent and the response received, and the DNS queries (secrets masked)
       <prefix>-Summary.json      the whole result, for scripts
       <prefix>.html              self-contained report (templates\Report.template.html)
@@ -19,7 +20,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.0.0
+    Version : 1.1.0
 #>
 
 $script:ReportColumns = [ordered]@{
@@ -30,6 +31,7 @@ $script:ReportColumns = [ordered]@{
     Provisioning = @('Mail', 'DisplayName', 'UserPrincipalName', 'UserType', 'AccountEnabled', 'SyncedFromAD', 'MailboxInExchangeOnline', 'MailboxType', 'Licenses', 'ExchangePlans', 'ExchangePlanEnabled', 'Autodiscover', 'MailboxProbe', 'UsageLocation', 'Created', 'ProxyAddresses')
     Dns          = @('Record', 'Name', 'Type', 'Found', 'Expected', 'Status', 'Source')
     Actions      = @('TimeUtc', 'Action', 'Target', 'Result', 'Detail')
+    Route        = @('Step', 'Kind', 'TimeUtc', 'Wait', 'SegmentName', 'Server', 'From', 'Ip', 'Tls', 'LongestWait', 'EntersMicrosoft365', 'Status', 'FindingsText')
     Trace        = @('Sequence', 'TimestampUtc', 'Stage', 'Step', 'StepName', 'Method', 'Url', 'Operation', 'Label', 'StatusCode', 'Reason', 'Server', 'DurationMs', 'Repeated', 'Note', 'Request', 'Response')
 }
 
@@ -116,6 +118,7 @@ function Export-GctReport {
         Provisioning = @(Get-GctField $Result 'Provisioning')
         Dns          = @(Get-GctField $Result 'DnsRecords')
         Actions      = @(Get-GctField $Result 'Actions')
+        Route        = @(Get-GctField $Result 'Route')
         Trace        = @(Get-GctField $Result 'Trace')
     }
     $files = [ordered]@{}
@@ -131,7 +134,7 @@ function Export-GctReport {
     if ($Formats -contains 'Html') {
         $summary = [ordered]@{}
         foreach ($key in 'Tool', 'Version', 'Status', 'TestType', 'Scenario', 'StartedUtc', 'CompletedUtc', 'DurationSeconds', 'Cloud', 'SourceMailbox', 'TargetMailboxes', 'Context', 'ClientId', 'ClientName',
-            'SignIn', 'SignedInUser', 'TenantId', 'Token', 'SourceProtocol', 'SourceEwsUrl', 'OnPremisesHost', 'Domain', 'AllowWrite', 'AdminChecks', 'StageTitles', 'FreeBusyWindow', 'Hybrid', 'Throttled', 'Counts', 'Error') {
+            'SignIn', 'SignedInUser', 'TenantId', 'Token', 'SourceProtocol', 'SourceEwsUrl', 'OnPremisesHost', 'Domain', 'AllowWrite', 'AdminChecks', 'StageTitles', 'FreeBusyWindow', 'Hybrid', 'HeaderSummary', 'Throttled', 'Counts', 'Error') {
             $summary[$key] = Get-GctField $Result $key
         }
         $template = [IO.File]::ReadAllText((Join-Path $script:ToolRoot 'templates\Report.template.html'))
@@ -155,8 +158,8 @@ function Export-GctReport {
 # SIG # Begin signature block
 # MIImKgYJKoZIhvcNAQcCoIImGzCCJhcCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDFWY3NWYsWzzyR
-# 6RiQ3FhoujtOz7Y1VfE7n6xxTCWJdqCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBB/dCw2CLHbZOo
+# xi/YpPY+v25n6gCxZ2fO7DXOrsYhhaCCDW8wggZyMIIEWqADAgECAghkM1HTxzif
 # CDANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMx
 # EDAOBgNVBAcMB0hvdXN0b24xGDAWBgNVBAoMD1NTTCBDb3Jwb3JhdGlvbjExMC8G
 # A1UEAwwoU1NMLmNvbSBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5IFJTQTAe
@@ -233,23 +236,23 @@ function Export-GctReport {
 # A1UEAwwrU1NMLmNvbSBDb2RlIFNpZ25pbmcgSW50ZXJtZWRpYXRlIENBIFJTQSBS
 # MQIQBof4ljXihJpmCqqt2mhAWzANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3
 # AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisG
-# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAkMrEAxG5e
-# AZVqIt5AIV0x1Y1xOaxxCrOWgJie+Sy7TjANBgkqhkiG9w0BAQEFAASCAgBX6oNi
-# 6wvAA8K7FioHapHXZebB1oqxTnx0Nx+gkqF2LL1Z9XN1ftWixcUJvk9EvJlnc8rF
-# aoNPjLdlpuUuzvnaOINQ0RvRZV5bgX5RWRy7ykXnFFuYL37/pIyE8Gjqq9LtRc6e
-# 5M1fcCPaLk1d/vdV1wqlJlWsEVE+rd2w2K/1eZrWYwzfgk9Sh4Q4K+b+CyoJg73G
-# IiAU5kozWiM0mhiEBNH5WA9O/wUuLUK+vt1O2GtjCtEXzDMcu63hNOvbjJvXSg4a
-# LOVels/8+0tiTHrfRqhPhY3cYM7ZnQ/S4301y9vnjAflyMQfrvLpWWolm7EvJWUo
-# yp393V0Dgi5HSqhzVWLykohqOZOuz03hj0FQrs4oWlhn4JhHuxwu0GibfYeE3K53
-# ksFAM6fT2L1QgQsfKTgTbqbR4FRrkYs0rFXUguiaO9Tqvgv/ZkhteqKiKMIArbXI
-# 6qrubWmha0EtYmHxf0zroxXip7Zwl2mtu5wyk7tYuNi87oNmtQMnFzhDuxajsq09
-# KBGC1tOTN5lcvUe9fX89m2BbQnLKexQ0wffWvpt9bmZMkQA9Iq6eVvKd9kZRuPmZ
-# sUJUWlgVyTAQTU/qwcVlHpt2RVqtKljdXu9ebXxmeHwxm1l/5HT5N5LnAv14zoOf
-# HDHjyZtRtfwERUs8KCXMyeAn6geI3f+JBsHVIKGCFM4wghTKBgorBgEEAYI3AwMB
+# AQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCC+Vp4SzswX
+# hy/OsZqa5d/RNBqkkmKseuJ3upv2VU924DANBgkqhkiG9w0BAQEFAASCAgBSjsLT
+# +ZBB+nX2XJ/Tuh4iLjKazCCpcj8JkkK0i3X+bcdHn1QifIW273FjgX5QBhz2PxwY
+# 5ifbVyr+t6i1OrjUb+R2YR5xROhgfLHZq3mUIvPnI6ByF/9V1VUS2gAv7RWqgG6j
+# GzL4JPwQfuzoP35lk1qaxDI0RLoteVQwHk5WJF4aeFsIkBNwLPoez8t/Kj+nhLgg
+# Nd5kVJv8Nx19VKZuo6f+LYKAJ/JtZaIvZafcpU2YhC4oIgBKmtnIyUvYM0jskpFf
+# tbasdAIKQPtHsmFuXLEyMe2fGsro34bIhuN4DzT2mAkU8TxnehW+rSobdcLq8Vt1
+# fi+IGpewzxQ+pAMRGEYWF7s3dc8yUsiUmvDypQNSPvb5Ek/tv6Dd44UwfmKSfTxL
+# ZhhZhJ9xlzHeXJUX9qMK1LUnOjZx0B4WlQTwbdc+Uzo7N17h7L9ShVagtmtza5DY
+# 05lIZz8XreRr2yLQl7xq86GQGAtZVnu1w+yosBYkEBRShWVxAO5WR7smd4ixigm6
+# LosmhPJYRa4sBwSFMpVfHcJG0AY3g6P09IeegnXFVDx6+7mZ9hCRJVf37q4Od4qB
+# fVYzt8HtcpeON6FA1gDzqimPiDnMyjLx0vsMR36iJmCQdIK6lDe9Gk4jmXZEGZnZ
+# csN9JZxJYuBXzqE2qo7+6XHwE67TgOxghRb33aGCFM4wghTKBgorBgEEAYI3AwMB
 # MYIUujCCFLYGCSqGSIb3DQEHAqCCFKcwghSjAgEDMQ0wCwYJYIZIAWUDBAIBMIGJ
 # BgsqhkiG9w0BCRABBKB6BHgwdgIBAQYMKwYBBAGCqTABAwYBMDEwDQYJYIZIAWUD
-# BAIBBQAEIExfcUUPqQ3kxwWjP16t6rMlGo9eJdSduU6F22Vbm+WnAggXOc2JeSDm
-# exgPMjAyNjExMTAxMDI0MDdaMAMCAQECEB9+1YnIW0WLhrcHMqtYhWqgghGnMIIE
+# BAIBBQAEIKyM6BajZUGfUF8IQu8NEbhSgz7RkxgBgqHioL78mlt7AggHqUHMy2Uj
+# FxgPMjAyNjExMTAxODI2NTNaMAMCAQECEBUWtP8D8n1NKpzw+Tr4yDSgghGnMIIE
 # 8zCCAtugAwIBAgIQVEP4N71a7hgBhHK4XNqO4zANBgkqhkiG9w0BAQsFADByMQsw
 # CQYDVQQGEwJVUzEOMAwGA1UECAwFVGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAP
 # BgNVBAoMCFNTTCBDb3JwMS4wLAYDVQQDDCVTU0wuY29tIFRpbWVzdGFtcGluZyBJ
@@ -348,13 +351,13 @@ function Export-GctReport {
 # czEQMA4GA1UEBwwHSG91c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMM
 # JVNTTC5jb20gVGltZXN0YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4Y
 # AYRyuFzajuMwCwYJYIZIAWUDBAIBoIIBYDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcN
-# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDEwMjQwN1owKAYJKoZIhvcNAQk0
-# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEICvI
-# voY1WcuyyIJh2ivhB884SzouSxWtDE1IuSspEaOtMIHIBgsqhkiG9w0BCRACLzGB
+# AQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MTExMDE4MjY1M1owKAYJKoZIhvcNAQk0
+# MRswGTALBglghkgBZQMEAgGhCgYIKoZIzj0EAwIwLwYJKoZIhvcNAQkEMSIEIIle
+# +LdChG6sbCtvSAyMNwyzTjFVJDLdzyliK8KpHMEmMIHIBgsqhkiG9w0BCRACLzGB
 # uDCBtTCBsjCBrwQgV0/qF6r6XnxqK5sIyZixc15FCzhzykTmokygkw5j87AwgYow
 # dqR0MHIxCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91
 # c3RvbjERMA8GA1UECgwIU1NMIENvcnAxLjAsBgNVBAMMJVNTTC5jb20gVGltZXN0
 # YW1waW5nIElzc3VpbmcgUlNBIENBIDICEFRD+De9Wu4YAYRyuFzajuMwCgYIKoZI
-# zj0EAwIERzBFAiEA5LAzmaQBj3/PCQf5Jg1lbo6yXr0l1IJ7yp52J9NNihwCIA5y
-# pZjM1GexY2wt+K84IjoWh968d4QnVN0+NW4X9WHh
+# zj0EAwIERzBFAiBksLFzMjomEpE7XbKXk1ITNhBfM9nc5+/dbsfV8+faCAIhALbW
+# NE1VIrwNDi54jdrvyl19dJeALCKyS560ej6w0XY9
 # SIG # End signature block

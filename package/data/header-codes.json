@@ -1,0 +1,214 @@
+{
+  "about": "Code tables of the message header analysis of Graph Connectivity Tests (web demo and PowerShell tool). Sources: the public Microsoft documentation on the anti-spam message headers of Microsoft 365 (Exchange Online Protection, Defender for Office 365) and RFC 7208 (SPF), RFC 7489 (DMARC), RFC 8601 (Authentication-Results), RFC 8617 (ARC). Values marked observed are seen in real messages but not documented by Microsoft.",
+  "version": "1.0.0",
+  "forefront": {
+    "ARC": { "name": "ARC", "text": "Authenticated Received Chain fields of the message." },
+    "CAT": { "name": "Category", "text": "The protection policy that was applied to the message." },
+    "CIP": { "name": "Connecting IP", "text": "The IP address that connected to Microsoft 365." },
+    "CTRY": { "name": "Country", "text": "The country or region of the connecting IP address." },
+    "DIR": { "name": "Direction", "text": "Direction of the message." },
+    "H": { "name": "HELO", "text": "The HELO or EHLO name the connecting server sent." },
+    "IPV": { "name": "IP reputation", "text": "Reputation of the connecting IP address." },
+    "LANG": { "name": "Language", "text": "Language the message is written in." },
+    "PTR": { "name": "Reverse DNS", "text": "The PTR record of the connecting IP address." },
+    "SCL": { "name": "Spam confidence level", "text": "-1 skipped, 0-1 not spam, 5-6 spam, 7-9 high confidence spam." },
+    "SFTY": { "name": "Safety", "text": "The message was found to be phishing." },
+    "SFV": { "name": "Spam filtering verdict", "text": "What spam filtering did with the message." },
+    "SRV": { "name": "Service", "text": "SRV:BULK - the message was marked as bulk by its bulk complaint level." },
+    "SFS": { "name": "Spam rules", "text": "Spam filtering rules that matched (internal identifiers)." },
+    "SFP": { "name": "Spam filtering policy", "text": "SFP:1501 - the message was sent with the outbound spam policy limit." },
+    "X-CustomSpam": { "name": "Advanced spam filter", "text": "An advanced spam filter (ASF) option of the anti-spam policy matched." },
+    "EFV": { "name": "Internal", "text": "Internal value of the filtering service." },
+    "OFR": { "name": "Override", "text": "Why the verdict was overridden." }
+  },
+  "dir": {
+    "INB": "inbound: from the Internet or an external organisation",
+    "OUT": "outbound: sent by the organisation to the Internet",
+    "INT": "internal: between mailboxes of the same organisation"
+  },
+  "sfv": {
+    "BLK": { "level": "bad", "text": "Spam filtering was skipped and the message was blocked: the sender is in the Blocked Senders list of the mailbox." },
+    "NSPM": { "level": "good", "text": "Spam filtering found the message clean: it goes to the recipients." },
+    "SFE": { "level": "warn", "text": "Spam filtering was skipped and the message allowed: the sender is in the Safe Senders list of the mailbox." },
+    "SKA": { "level": "warn", "text": "Spam filtering was skipped and the message allowed: the sender is in an allowed senders or allowed domains list of an anti-spam policy." },
+    "SKB": { "level": "bad", "text": "The message was marked as spam: the sender is in a blocked senders or blocked domains list of an anti-spam policy." },
+    "SKI": { "level": "good", "text": "Internal message of the organisation (intra-organisation): spam filtering was skipped." },
+    "SKN": { "level": "warn", "text": "The message was marked non-spam before spam filtering, usually by a mail flow rule (SCL -1)." },
+    "SKQ": { "level": "neutral", "text": "The message was released from quarantine and sent to the recipients." },
+    "SKS": { "level": "bad", "text": "The message was marked as spam before spam filtering, usually by a mail flow rule." },
+    "SPM": { "level": "bad", "text": "Spam filtering marked the message as spam." }
+  },
+  "cat": {
+    "AMP": "Anti-malware",
+    "BIMP": "Brand impersonation",
+    "BULK": "Bulk mail",
+    "DIMP": "Domain impersonation",
+    "FTBP": "Anti-malware filtered attachment types (common attachment filter)",
+    "GIMP": "Mailbox intelligence impersonation",
+    "HPHSH": "High confidence phishing",
+    "HPHISH": "High confidence phishing",
+    "HSPM": "High confidence spam",
+    "INTOS": "Intra-organisation phishing",
+    "MALW": "Malware",
+    "OSPM": "Outbound spam",
+    "PHSH": "Phishing",
+    "SAP": "Safe Attachments",
+    "SPM": "Spam",
+    "SPOOF": "Spoofing",
+    "UIMP": "User impersonation",
+    "NONE": "No protection policy matched"
+  },
+  "ipv": {
+    "CAL": "Spam filtering was skipped: the IP address is in the IP Allow List of the connection filter policy.",
+    "NLI": "The IP address is not on any IP reputation list."
+  },
+  "sfty": {
+    "9.19": "Domain impersonation: the sending domain tries to look like a domain of the organisation or a protected domain.",
+    "9.20": "User impersonation: the sender tries to look like a protected user of the organisation."
+  },
+  "scl": [
+    { "min": -1, "max": -1, "level": "warn", "text": "Spam filtering was skipped (allow list, mail flow rule, or an internal message)." },
+    { "min": 0, "max": 1, "level": "good", "text": "Not spam: delivered to the Inbox." },
+    { "min": 2, "max": 4, "level": "good", "text": "Not spam (these values are not used by Microsoft 365)." },
+    { "min": 5, "max": 6, "level": "warn", "text": "Spam: the action of the anti-spam policy for spam applies (Junk Email folder by default)." },
+    { "min": 7, "max": 8, "level": "bad", "text": "High confidence spam: the action for high confidence spam applies." },
+    { "min": 9, "max": 9, "level": "bad", "text": "High confidence spam: the action for high confidence spam applies." }
+  ],
+  "bcl": [
+    { "min": 0, "max": 0, "level": "good", "text": "Not bulk mail." },
+    { "min": 1, "max": 3, "level": "good", "text": "Bulk mail from a sender with few complaints." },
+    { "min": 4, "max": 7, "level": "warn", "text": "Bulk mail from a sender with a mixed number of complaints." },
+    { "min": 8, "max": 9, "level": "bad", "text": "Bulk mail from a sender with many complaints." }
+  ],
+  "bclThresholdDefault": 7,
+  "compauth": {
+    "results": {
+      "pass": "Composite authentication passed: Microsoft 365 trusts the sender of the From address.",
+      "fail": "Composite authentication failed: Microsoft 365 treats the From address as spoofed.",
+      "softpass": "Composite authentication passed softly (implicit authentication).",
+      "none": "Composite authentication was not evaluated or was bypassed."
+    },
+    "reasons": [
+      { "match": "^000$", "level": "bad", "text": "Explicit failure: DMARC failed and the domain of the From address asks receivers to quarantine or reject (p=quarantine or p=reject)." },
+      { "match": "^001$", "level": "bad", "text": "Implicit failure: the domain of the From address publishes no DMARC (or a weak) policy, and Microsoft 365 found the message not trustworthy (SPF, DKIM, sender history)." },
+      { "match": "^002$", "level": "bad", "text": "The organisation forbids this sender and domain pair to spoof (Tenant Allow/Block List or spoof intelligence)." },
+      { "match": "^010$", "level": "bad", "text": "DMARC failed with p=quarantine or p=reject for a domain that is an accepted domain of the organisation (self-to-self or intra-organisation spoofing)." },
+      { "match": "^130$", "level": "good", "text": "The ARC result of a trusted sealer overrode the DMARC failure." },
+      { "match": "^[17]\\d\\d$", "level": "good", "text": "The message passed composite authentication (the last two digits are internal codes)." },
+      { "match": "^2\\d\\d$", "level": "warn", "text": "Implicit authentication passed softly (soft pass): no explicit failure, but no full trust either." },
+      { "match": "^3\\d\\d$", "level": "neutral", "text": "The message was not checked for composite authentication." },
+      { "match": "^[49]\\d\\d$", "level": "neutral", "text": "Composite authentication was bypassed (for example an allow entry or a mail flow rule)." },
+      { "match": "^6\\d\\d$", "level": "bad", "text": "Implicit failure for a domain that is an accepted domain of the organisation." },
+      { "match": "^8\\d\\d$", "level": "neutral", "text": "Composite authentication was skipped because of a configuration of the organisation." }
+    ]
+  },
+  "auth": {
+    "spf": {
+      "pass": { "level": "good", "text": "The sending IP address is allowed by the SPF record of the MAIL FROM domain." },
+      "fail": { "level": "bad", "text": "The SPF record of the MAIL FROM domain refuses the sending IP address (-all)." },
+      "softfail": { "level": "warn", "text": "The SPF record of the MAIL FROM domain does not allow the sending IP address (~all)." },
+      "neutral": { "level": "warn", "text": "The SPF record of the MAIL FROM domain says nothing about the sending IP address (?all)." },
+      "none": { "level": "warn", "text": "The MAIL FROM domain has no SPF record." },
+      "temperror": { "level": "warn", "text": "A temporary DNS error prevented the SPF check." },
+      "permerror": { "level": "bad", "text": "The SPF record is broken: syntax error, more than 10 DNS lookups, or several SPF records." }
+    },
+    "dkim": {
+      "pass": { "level": "good", "text": "The DKIM signature was verified." },
+      "fail": { "level": "bad", "text": "The DKIM signature did not verify: the message was changed in transit, or the key in DNS does not match." },
+      "none": { "level": "warn", "text": "The message is not signed with DKIM." },
+      "neutral": { "level": "warn", "text": "The DKIM signature could not be checked." },
+      "policy": { "level": "warn", "text": "The DKIM signature is valid but not accepted by the policy of the receiver." },
+      "temperror": { "level": "warn", "text": "A temporary DNS error prevented the DKIM check." },
+      "permerror": { "level": "bad", "text": "The DKIM signature or its key is broken (no key in DNS, bad syntax)." }
+    },
+    "dmarc": {
+      "pass": { "level": "good", "text": "DMARC passed: SPF or DKIM passed for a domain aligned with the From address." },
+      "bestguesspass": { "level": "warn", "text": "The domain of the From address has no DMARC record; the message would have passed if it had one." },
+      "fail": { "level": "bad", "text": "DMARC failed: neither SPF nor DKIM passed for a domain aligned with the From address." },
+      "none": { "level": "warn", "text": "The domain of the From address has no DMARC record." },
+      "temperror": { "level": "warn", "text": "A temporary DNS error prevented the DMARC check." },
+      "permerror": { "level": "bad", "text": "The DMARC record of the domain is broken." }
+    },
+    "dmarcAction": {
+      "none": "no action asked by the DMARC policy (p=none), or DMARC passed",
+      "pct.quarantine": "the policy asks for quarantine, but the message was outside the pct= sample",
+      "pct.reject": "the policy asks for reject, but the message was outside the pct= sample",
+      "quarantine": "the DMARC policy asks for quarantine (p=quarantine)",
+      "reject": "the DMARC policy asks for reject (p=reject)",
+      "oreject": "the DMARC policy asks for reject, Microsoft 365 applied its own action (the message was accepted and treated as spam or quarantined)",
+      "bestguesspass": "no DMARC record: best guess pass"
+    }
+  },
+  "mailboxDelivery": {
+    "fields": {
+      "ucf": "User custom flags (observed: 1 when a user setting or rule was involved).",
+      "jmr": "Junk mail rule of the mailbox (observed: 1 when the junk email rule of the mailbox acted).",
+      "auth": "Authentication of the sender for the mailbox (observed).",
+      "dest": "Destination folder chosen for the message in the mailbox.",
+      "OFR": "Reason of the folder choice.",
+      "RF": "Reason the message was filed (observed).",
+      "ENG": "Internal engine values."
+    },
+    "dest": {
+      "I": "Inbox",
+      "J": "Junk Email folder",
+      "C": "a custom folder (an inbox rule moved it)",
+      "D": "Deleted Items",
+      "Q": "Quarantine"
+    },
+    "ofr": {
+      "CustomRules": { "level": "warn", "text": "An inbox rule of the mailbox (Outlook rule) decided the folder." },
+      "ExclusiveSettings": { "level": "warn", "text": "The Blocked Senders list or the Safe Senders list of the mailbox decided the folder." },
+      "SpamFilterAuthJ": { "level": "warn", "text": "The spam verdict of the service (SCL or failed sender authentication) sent the message to the Junk Email folder." },
+      "TrustedSenderList": { "level": "good", "text": "The Safe Senders list of the mailbox kept the message in the Inbox." },
+      "Junk": { "level": "warn", "text": "The junk email filter of the mailbox moved the message." }
+    }
+  },
+  "exchange": {
+    "authAs": {
+      "Internal": { "level": "good", "text": "The message was authenticated as coming from inside the organisation (a mailbox, a recognised on-premises server or connector)." },
+      "Anonymous": { "level": "neutral", "text": "The message came anonymously, as any message from the Internet." },
+      "Partner": { "level": "good", "text": "The message came through a partner connector (TLS with a recognised partner)." },
+      "External": { "level": "neutral", "text": "The message was authenticated as external." }
+    },
+    "fromEntity": {
+      "Hosted": "a mailbox of Exchange Online",
+      "HybridOnPrem": "the on-premises organisation of the hybrid (recognised through the inbound connector)",
+      "Internet": "the Internet (not attributed to the organisation)"
+    },
+    "directionality": {
+      "Originating": "sent by the organisation (originating)",
+      "Incoming": "received by the organisation from outside (incoming)"
+    }
+  },
+  "gateways": [
+    { "name": "Proofpoint", "headers": "^X-Proofpoint-|^X-PPE-", "hosts": "pphosted\\.com$|ppe-hosted\\.com$|proofpoint\\.com$" },
+    { "name": "Mimecast", "headers": "^X-Mimecast-|^X-MimecastSpamScore", "hosts": "mimecast\\.com$|mimecast-offshore\\.com$" },
+    { "name": "Cisco Secure Email (IronPort)", "headers": "^X-IronPort-|^X-IPAS-Result|^X-SBRS", "hosts": "iphmx\\.com$|ironport|esa\\d" },
+    { "name": "Barracuda", "headers": "^X-Barracuda-", "hosts": "barracuda(networks)?\\.com$|cudamail\\.com$|ess\\.barracuda" },
+    { "name": "Trend Micro", "headers": "^X-TM-AS-|^X-TMASE-|^X-TM-Received", "hosts": "trendmicro\\.(com|eu)$|tmes\\.trendmicro" },
+    { "name": "Sophos", "headers": "^X-Sophos-|^X-LASED-", "hosts": "sophos\\.com$|hydra\\.sophos" },
+    { "name": "Broadcom (Symantec) Email Security.cloud", "headers": "^X-Brightmail-|^X-StarScan-", "hosts": "messagelabs\\.com$" },
+    { "name": "Hornetsecurity", "headers": "^X-Hornet-|^X-HES-", "hosts": "hornetsecurity\\.com$|antispameurope\\.com$" },
+    { "name": "N-able Mail Assure (SpamExperts)", "headers": "^X-SpamExperts-", "hosts": "spamexperts\\.(com|eu|net)$|mailassure" },
+    { "name": "Forcepoint", "headers": "^X-Forcepoint-", "hosts": "mailcontrol\\.com$" },
+    { "name": "Trellix (FireEye)", "headers": "^X-FireEye|^X-FEAS-", "hosts": "fireeye\\.com$|trellix\\.com$" },
+    { "name": "Vade", "headers": "^X-VR-|^X-Vade-", "hosts": "vadesecure\\.com$" },
+    { "name": "SpamAssassin", "headers": "^X-Spam-Status$|^X-Spam-Checker-Version$", "hosts": "" }
+  ],
+  "senders": [
+    { "name": "Google (Gmail or Google Workspace)", "hosts": "google\\.com$|googlemail\\.com$" },
+    { "name": "Amazon SES", "hosts": "amazonses\\.com$" },
+    { "name": "SendGrid", "hosts": "sendgrid\\.net$" },
+    { "name": "Mailgun", "hosts": "mailgun\\.(org|net)$" },
+    { "name": "Mailchimp (Mandrill)", "hosts": "mcsv\\.net$|mandrillapp\\.com$|rsgsv\\.net$" },
+    { "name": "Salesforce", "hosts": "salesforce\\.com$|exacttarget\\.com$" }
+  ],
+  "multiLabelSuffixes": [
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au",
+    "co.nz", "org.nz", "co.jp", "ne.jp", "or.jp", "co.kr", "co.in", "co.za", "org.za",
+    "com.br", "com.mx", "com.ar", "com.cn", "com.tw", "com.hk", "com.sg", "com.tr", "com.my",
+    "gouv.fr", "asso.fr", "co.il", "com.pl", "co.at", "or.at"
+  ]
+}

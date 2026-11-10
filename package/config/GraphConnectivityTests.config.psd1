@@ -2,7 +2,7 @@
 #  Graph Connectivity Tests - configuration file
 #  --------------------------------------------------------------------------
 #  Author  : Nicolas Fabert
-#  Version : 1.0.0
+#  Version : 1.1.0
 #
 #  This file is read by Invoke-GraphConnectivityTests.ps1 and by the window (-Gui). It is a PowerShell
 #  data file: text between quotes, $true / $false, numbers, and @( ) for lists. Lines starting with # are
@@ -23,6 +23,9 @@
     #   SkipOnPremisesChecks: $true skips the checks of the on-premises endpoint (certificate, OAuth).
     #   Domain:          DomainDns: the domain to check (empty = the domain of the source).
     #   Cloud:           Global | USGov (GCC High) | USGovDoD | China (21Vianet).
+    #   HeaderFile:      MessageHeaders: an .eml or .txt file with the headers of a message (only the header
+    #                    block is read). -HeaderFile on the command line.
+    #   HeaderText:      MessageHeaders: the headers as text, instead of a file. -HeaderText on the command line.
     # ---------------------------------------------------------------------
     Target = @{
         SourceMailbox        = 'alice@contoso.com'
@@ -31,6 +34,8 @@
         SkipOnPremisesChecks = $false
         Domain               = ''
         Cloud                = 'Global'
+        HeaderFile           = ''
+        HeaderText           = ''
     }
 
     # ---------------------------------------------------------------------
@@ -74,7 +79,7 @@
 
     # ---------------------------------------------------------------------
     # How it is tested.
-    #   DefaultType: FreeBusy | MailboxServices | Provisioning | DomainDns | All
+    #   DefaultType: FreeBusy | MailboxServices | Provisioning | DomainDns | MessageHeaders | All
     #   SignIn: 'Auto' (the sign-in window when this session can show one, else a device code),
     #           'Window' (Edge or Chrome, temporary profile) or 'DeviceCode' (a code typed on any device).
     #   AllowWrite: $true lets MailboxServices schedule the automatic replies, read them back and restore
@@ -82,6 +87,12 @@
     #   AdminChecks: $true adds the hybrid configuration of Exchange Online read by an Exchange administrator
     #     (one more sign-in). -AdminChecks on the command line.
     #   FreeBusyDays (1-62), FreeBusyIntervalMinutes: the period asked from today, and the slot length.
+    #   SkipDnsCrossCheck: $true leaves out the DNS of today in MessageHeaders (no DNS query at all).
+    #     -SkipDnsCrossCheck on the command line.
+    #   DnsServer: the DNS servers to ask (IP addresses or names), for DomainDns and the DNS of today of
+    #     MessageHeaders; empty: the DNS servers of Windows. -DnsServer on the command line.
+    #   DnsProbeName: a name that always exists, asked first by MessageHeaders. When no DNS server answers it,
+    #     the header is read offline (no comparison with the DNS of today) instead of failing.
     # ---------------------------------------------------------------------
     Test = @{
         DefaultType             = 'FreeBusy'
@@ -95,6 +106,9 @@
         CertificateWarningDays  = 30
         MaxRetries              = 2
         UserAgent               = 'GraphConnectivityTests/1.0'
+        SkipDnsCrossCheck       = $false
+        DnsServer               = @()
+        DnsProbeName            = 'microsoft.com'
     }
 
     # ---------------------------------------------------------------------

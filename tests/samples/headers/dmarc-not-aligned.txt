@@ -1,0 +1,39 @@
+Received: from AM4PEPF00027A63.eurprd04.prod.outlook.com
+ (2603:10a6:20b:462:cafe::5d) by DB9PR04MB8100.eurprd04.prod.outlook.com
+ (2603:10a6:10:2b1::7) with Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8200.12; Tue, 10 Nov
+ 2026 08:05:44 +0000
+Authentication-Results: spf=pass (sender IP is 203.0.113.77)
+ smtp.mailfrom=bounce.fabrikamsender.com; dkim=pass (signature was verified)
+ header.d=fabrikamsender.com;dmarc=fail action=quarantine
+ header.from=fabrikam.com;compauth=fail reason=000
+Received-SPF: Pass (protection.outlook.com: domain of bounce.fabrikamsender.com
+ designates 203.0.113.77 as permitted sender)
+ receiver=protection.outlook.com; client-ip=203.0.113.77;
+ helo=o1.out.fabrikamsender.com; pr=C
+Received: from o1.out.fabrikamsender.com (203.0.113.77) by
+ AM4PEPF00027A63.mail.protection.outlook.com (10.167.16.77) with Microsoft SMTP
+ Server (version=TLS1_3, cipher=TLS_AES_256_GCM_SHA384) id 15.20.8200.12 via
+ Frontend Transport; Tue, 10 Nov 2026 08:05:43 +0000
+Received: by o1.out.fabrikamsender.com with SMTP id
+ mAbCdEfGhIjKlMnOp-1; Tue, 10 Nov 2026 08:05:42.123 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=fabrikamsender.com;
+ s=s1; h=from:to:subject:date:message-id; bh=c2FtcGxl;
+ b=c2FtcGxlIHNpZ25hdHVyZQ==
+From: Fabrikam News <news@fabrikam.com>
+Reply-To: Fabrikam Marketing <reply@fabrikamsender.com>
+To: alice@contoso.com
+Subject: =?UTF-8?B?Tm92ZW1iZXIgbmV3c2xldHRlciDwn5Oo?=
+Date: Tue, 10 Nov 2026 08:05:41 +0000
+Message-ID: <mAbCdEfGhIjKlMnOp@o1.out.fabrikamsender.com>
+MIME-Version: 1.0
+X-MS-Exchange-Organization-Network-Message-Id: 2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f
+X-MS-Exchange-Organization-AuthAs: Anonymous
+X-MS-Exchange-Organization-MessageDirectionality: Incoming
+X-MS-Exchange-Organization-SCL: 5
+X-Forefront-Antispam-Report: CIP:203.0.113.77;CTRY:US;LANG:en;SCL:5;SRV:BULK;IPV:NLI;SFV:SPM;H:o1.out.fabrikamsender.com;PTR:o1.out.fabrikamsender.com;CAT:SPOOF;SFS:(13230040);DIR:INB;
+X-Microsoft-Antispam: BCL:6;ARA:13230040;
+X-Microsoft-Antispam-Mailbox-Delivery: ucf:0;jmr:0;auth:0;dest:J;OFR:SpamFilterAuthJ;ENG:(910001)(944506478);
+X-MS-Exchange-CrossTenant-Id: 7d0c3e8a-5f1b-4a2c-9e6d-1b2c3d4e5f60
+X-MS-Exchange-CrossTenant-AuthAs: Anonymous
+X-MS-Exchange-CrossTenant-FromEntityHeader: Internet
