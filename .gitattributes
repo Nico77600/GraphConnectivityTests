@@ -1,0 +1,25 @@
+# Language statistics: the guides are documentation, not code.
+package/docs/** linguist-documentation
+
+# Owner-signed PowerShell files of the package (Authenticode): Git must keep their exact bytes (CRLF included), with no end-of-line conversion or filter, so the signatures stay valid.
+# Do not add a global autocrlf rule for these paths. The editable configuration (package/config) is not signed.
+# cr-at-eol because their working-tree line endings are CRLF; the other whitespace checks stay active.
+package/Invoke-GraphConnectivityTests.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/GraphConnectivityTests.psd1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/GraphConnectivityTests.psm1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Auth.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Browser.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Config.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Console.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Discovery.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Dns.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Ews.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.ExchangeAdmin.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.FreeBusy.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Graph.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Gui.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Http.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Mailbox.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.OAuth.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Report.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
+package/src/GraphConnectivityTests.Run.ps1 -text whitespace=blank-at-eol,space-before-tab,blank-at-eof,cr-at-eol
